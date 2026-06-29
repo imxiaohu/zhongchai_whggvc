@@ -1,0 +1,96 @@
+name: Deploy to CentOS
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      skip_tests:
+        description: 'Skip CI workflow (for hotfixes)'
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    if: |
+      github.actor != 'dependabot[bot]' &&
+      !contains(github.event.head_commit.message, '[skip ci]') &&
+      !contains(github.event.head_commit.message, '[skip deploy]')
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download Linux amd64 artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: binary-linux-amd64
+          path: dist/
+
+      - name: List artifacts
+        run: |
+          ls -la dist/
+          ls -la dist/ || true
+
+      - name: Deploy to CentOS
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.SSH_HOST }}
+          port: ${{ secrets.SSH_PORT }}
+          username: ${{ secrets.SSH_USERNAME }}
+          password: ${{ secrets.SSH_PASSWORD }}
+          key: ${{ secrets.SSH_KEY }}
+          envs: DEPLOY_PATH,SERVICE_NAME
+          debug: true
+          script: |
+            set -e
+
+            DEPLOY_PATH="${{ secrets.DEPLOY_PATH }}"
+            SERVICE_NAME="${{ secrets.SERVICE_NAME }}"
+            if [ -z "$SERVICE_NAME" ]; then SERVICE_NAME="pingjiao"; fi
+
+            echo "=== Deploying to ${DEPLOY_PATH} on ${SERVICE_NAME} ==="
+            echo "Current user: $(whoami)"
+
+            echo "Stopping service..."
+            sudo systemctl stop "${SERVICE_NAME}" || true
+
+            if [ -f "${DEPLOY_PATH}/pingjiao" ]; then
+              BACKUP_NAME="pingjiao.bak.$(date +%Y%m%d%H%M%S)"
+              echo "Backing up current binary to ${BACKUP_NAME}..."
+              cp "${DEPLOY_PATH}/pingjiao" "${DEPLOY_PATH}/${BACKUP_NAME}"
+            fi
+
+            sudo mkdir -p "${DEPLOY_PATH}"
+            sudo chown -R $(whoami):$(id -gn $(whoami)) "${DEPLOY_PATH}"
+
+            echo "Deploying new binary..."
+            cd "${DEPLOY_PATH}"
+            ls -la ~/dist/ 2>/dev/null || ls -la /home/${{ secrets.SSH_USERNAME }}/dist/ 2>/dev/null || true
+            ARCHIVE=$(ls ~/dist/*.tar.gz 2>/dev/null | head -1 || ls /home/${{ secrets.SSH_USERNAME }}/dist/*.tar.gz 2>/dev/null | head -1)
+            if [ -n "$ARCHIVE" ]; then
+              tar -xzf "$ARCHIVE" -C "${DEPLOY_PATH}"
+            fi
+            ls -la
+
+            chmod +x pingjiao
+
+            echo "Restarting service..."
+            sudo systemctl daemon-reload
+            sudo systemctl start "${SERVICE_NAME}"
+
+            sleep 3
+            if systemctl is-active --quiet "${SERVICE_NAME}"; then
+              echo "=== Deployment successful! Service is running. ==="
+              systemctl status "${SERVICE_NAME}" --no-pager || true
+            else
+              echo "=== WARNING: Service failed to start. Check logs: ==="
+              sudo journalctl -u "${SERVICE_NAME}" -n 30 --no-pager || true
+              exit 1
+            fi

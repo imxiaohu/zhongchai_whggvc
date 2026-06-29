@@ -1,0 +1,211 @@
+import View from 'android.view.View';
+import ImageView from 'android.widget.ImageView';
+import Base64 from 'android.util.Base64'
+import URL from 'java.net.URL';
+import Executors from 'java.util.concurrent.Executors'
+
+import Rect from 'android.graphics.Rect';
+import Paint from 'android.graphics.Paint';
+import Bitmap from 'android.graphics.Bitmap';
+import Canvas from 'android.graphics.Canvas';
+import ColorMatrixColorFilter from 'android.graphics.ColorMatrixColorFilter';
+import ColorMatrix from 'android.graphics.ColorMatrix';
+import Color from 'android.graphics.Color';
+import PictureDrawable from 'android.graphics.drawable.PictureDrawable';
+import SVG from 'com.caverock.androidsvg.SVG';
+import { getResourcePath, svgDataURLPrefix, fileToRaw } from './fileUtils';
+
+export function processSvgString(path : string) : string {
+	let svgString = path
+	if (path.startsWith(svgDataURLPrefix) && path.includes('base64')) {
+		const base64Data = path.split("base64,")[1];
+		const decodedData = Base64.decode(base64Data, Base64.DEFAULT);
+		svgString = new String(decodedData);
+	}
+	const svgDataURL= `${svgDataURLPrefix},`
+	if(svgString.startsWith(svgDataURL)) {
+		svgString = decodeURIComponent(svgString.replace(svgDataURL, ''))??'';
+	}
+	svgString = svgString.replace(/<svg[^>]+/, (match : string, offset : number, string : string) : string => {
+		return match.replace(/\s(width|height)="(\d+(\.\d+)?)([a-z]+)?"/gm, '')
+	});
+	return svgString
+		// .replace(/\s(width|height)="(\d+(\.\d+)?)([a-z]+)?"/gm, '')
+		.replace(/[\t\r\n]/g, '');
+}
+
+export function clampValue(value : number, min : number = 1000, max : number = 512) : number {
+	return Math.min(Math.max(value, min), max);
+}
+
+/**
+ * 定义按钮点击后触发回调的类
+ * [可选实现]
+ */
+export class ButtonClickListener extends View.OnClickListener {
+	/**
+	 * 如果需要在回调类或者代理类中对组件进行操作，比如调用组件方法，发送事件等，需要在该类中持有组件对应的原生类的对象
+	 * 组件原生类的基类为 UTSComponent，该类是一个泛型类，需要接收一个类型变量，该类型变量就是原生组件的类型
+	 */
+	private comp : UTSComponent<ImageView>;
+	constructor(comp : UTSComponent<ImageView>) {
+		super();
+		this.comp = comp;
+	}
+
+	/**
+	 * 按钮点击回调方法
+	 */
+	override onClick(v ?: View) {
+		// 发送事件
+		this.comp.$emit("click");
+	}
+}
+
+export function parseRgbaToColor(color : string) : Int {
+	if (color.startsWith('rgb')) {
+		const matcher = color.match(/\d+(\.\d+)?/)
+		let r = 0
+		let g = 0
+		let b = 0
+		let a = 0
+		if (matcher != null) {
+			if (matcher.length > 0) {
+				r = parseFloat(matcher[0]??'0')
+			}
+			if (matcher.length > 1) {
+				g = parseFloat(matcher[1]??'0')
+			}
+			if (matcher.length > 2) {
+				b = parseFloat(matcher[2]??'0')
+			}
+			if (matcher.length > 3) {
+				a = parseFloat(matcher[3]??'0')
+			}
+		}
+		const hexColor = new String.format("#%02X%02X%02X%02X", a * 255, r, g, b);
+		return Color.parseColor(hexColor);
+	}
+	return Color.parseColor(color)
+}
+
+export function createColoredBitmap(drawable : PictureDrawable, color : string) : Bitmap | null {
+	const width = clampValue(drawable.getPicture().getWidth() * 100).toInt()
+	const height = clampValue(drawable.getPicture().getHeight() * 100).toInt()
+	if (width == 0 || height == 0) return null
+	const newBM = Bitmap.createBitmap(
+		width,
+		height,
+		Bitmap.Config.ARGB_8888);
+
+	const bmcanvas = new Canvas(newBM);
+	// 设置目标颜色
+	const targetColor = parseRgbaToColor(color)//Color.parseColor()
+
+	const colorMatrix = new ColorMatrix();
+	const r = Color.red(targetColor.toInt())
+	const g = Color.green(targetColor.toInt())
+	const b = Color.blue(targetColor.toInt())
+
+	const targetColorMatrix = [
+		1, 0, 0, 0, r, // R
+		0, 1, 0, 0, g, // G
+		0, 0, 1, 0, b, // B
+		0, 0, 0, 1, 0  // A
+	].toKotlinList().map((it) : Float => it.toFloat()).toFloatArray()
+
+
+	colorMatrix.postConcat(new ColorMatrix(targetColorMatrix))
+	const colorFilter = new ColorMatrixColorFilter(colorMatrix)
+
+	const paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+	paint.setAntiAlias(true); // 开启抗锯齿
+	paint.setFilterBitmap(true);
+	paint.setColorFilter(colorFilter);
+
+	const srcRect = new Rect(0, 0, width, height);
+	drawable.setBounds(0, 0, width, height);
+	drawable.draw(bmcanvas);
+	bmcanvas.drawBitmap(newBM, srcRect, srcRect, paint);
+
+
+	return newBM
+}
+
+
+export function setSvgImage(src ?: string, cb : (svg : SVG | null) => void) {
+	if (src == null || src == '') return cb(null)
+	console.log('src', src)
+	const path = getResourcePath(src);
+	if (path == null) return cb(null)
+	if (path.startsWith('<svg') || path.startsWith(svgDataURLPrefix)) {
+		const svgStr = processSvgString(path)
+		const svg = SVG.getFromString(svgStr)
+		cb(svg)
+	} else if (path.startsWith('http')) {
+		try {
+			uni.request({
+				url: path,
+				dataType: 'text',
+				success: (res) => {
+					const svgStr = processSvgString(res.data as string)
+					const svg = SVG.getFromString(svgStr)
+					cb(svg)
+				},
+				fail: (err) => {
+					console.warn('[lime-svg]: ' + JSON.stringify(err))
+					cb(null)
+				}
+			})
+		} catch (e) {
+			try {
+				const executorService = Executors.newFixedThreadPool(4)
+				executorService.submit(() => {
+					let resourceUrl = new URL(path);
+					const svg = SVG.getFromInputStream(resourceUrl.openStream())
+					cb(svg)
+					executorService.shutdown()
+				})
+			} catch (e) {
+				const err = e as Error
+				console.warn('[lime-svg]: ' + err.message)
+				cb(null)
+				// console.warn('[lime-svg]: 插件使用了【uni.request】需要自定义基座')
+			}
+			console.warn('[lime-svg]: 插件使用了【uni.request】需要自定义基座')
+		}
+	} else {
+
+		try {
+			const raw = fileToRaw(path)
+			
+			if (raw == null) return
+			const svgStr = processSvgString(raw)
+			const svg = SVG.getFromString(svgStr)
+			cb(svg)
+		} catch (e) {
+			const err = e as Error
+			console.warn('[lime-svg]: ' + err.message)
+		}
+		// const svg = SVG.getFromInputStream(new FileInputStream(path))
+	}
+}
+
+// class ViewLayoutListener extends ViewTreeObserver.OnGlobalLayoutListener {
+// 	private $el : ImageView;
+// 	private callback : ((width : number, height : number) => void) | null;
+
+// 	constructor($el : ImageView, callback : ((width : number, height : number) => void) | null) {
+// 		super();
+// 		this.$el = $el;
+// 		this.callback = callback;
+// 	}
+
+// 	override onGlobalLayout() {
+// 		let width = UTSAndroid.devicePX2px(this.$el.getWidth());
+// 		let height = UTSAndroid.devicePX2px(this.$el.getHeight());
+// 		if (this.callback != null) {
+// 			(this.callback as ((width : number, height : number) => void))(width, height);
+// 		}
+// 	}
+// }

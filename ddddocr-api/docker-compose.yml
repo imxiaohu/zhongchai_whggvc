@@ -1,0 +1,98 @@
+# ============================================================
+# ddddocr-api docker-compose.yml
+# 快速启动: docker compose up -d
+#
+# 开发环境: docker compose --profile dev up -d
+# 生产环境: docker compose --profile prod up -d
+# 构建镜像: docker compose build
+# ============================================================
+
+services:
+  # ============================================
+  # ddddocr API 服务（核心）
+  # ============================================
+  ddddocr-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ddddocr-api
+    profiles:
+      - dev
+      - prod
+    ports:
+      - "${OCR_PORT:-8899}:8899"
+    environment:
+      # ddddocr 服务端参数
+      - DDDDOCR_HOST=0.0.0.0
+      - DDDDOCR_PORT=8899
+      - DDDDOCR_WORKERS=${OCR_WORKERS:-2}
+      # 是否启用 OCR（固定为 true）
+      - DDDDOCR_OCR=true
+      # 是否使用 beta 模型（首次运行自动下载，设为 true 可使用更准的模型）
+      - DDDDOCR_BETA=${OCR_BETA:-false}
+      # 是否使用 GPU 加速（需要 NVIDIA Docker 支持）
+      - DDDDOCR_USE_GPU=${OCR_USE_GPU:-false}
+      # Python 时区
+      - TZ=Asia/Shanghai
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8899/health')"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    # CPU/内存限制（生产环境建议配置）
+    deploy:
+      resources:
+        limits:
+          cpus: "${OCR_CPU_LIMIT:-2}"
+          memory: "${OCR_MEM_LIMIT:-2G}"
+        reservations:
+          cpus: "${OCR_CPU_RESERVE:-0.5}"
+          memory: "${OCR_MEM_RESERVE:-512M}"
+    # 数据卷：缓存下载的模型文件，避免每次重建都重新下载
+    volumes:
+      - ddddocr-cache:/root/.ddddocr
+    networks:
+      - ddddocr-network
+
+  # ============================================
+  # 仅开发：启动一个 Go 后端模拟服务用于测试
+  # ============================================
+  backend-dev:
+    image: golang:1.23-alpine
+    profiles:
+      - dev
+    container_name: pingjiao-backend-dev
+    working_dir: /app
+    command: ["sh", "-c", "echo 'Go backend not included here, see go_backend/'"]
+    networks:
+      - ddddocr-network
+
+  # ============================================
+  # 仅开发：启动测试客户端验证 OCR 服务
+  # ============================================
+  ocr-tester:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    profiles:
+      - dev
+    container_name: ddddocr-tester
+    depends_on:
+      ddddocr-api:
+        condition: service_healthy
+    entrypoint: ["python", "-c"]
+    # 启动后自动测试识别一张示例图片
+    command: |
+      "import requests, base64, sys; r = requests.get('http://ddddocr-api:8899/health'); print('Health:', r.text); sys.exit(0 if r.status_code == 200 else 1)"
+    networks:
+      - ddddocr-network
+
+volumes:
+  # 模型缓存卷：避免重建镜像时重复下载 ~500MB 模型文件
+  ddddocr-cache:
+
+networks:
+  ddddocr-network:
+    driver: bridge

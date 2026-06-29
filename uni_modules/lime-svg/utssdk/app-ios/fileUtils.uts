@@ -1,0 +1,46 @@
+export let svgDataURLPrefix = "data:image/svg+xml;base64,";
+
+export function getResourcePath(path : string) : string | null {
+	if(path.length == 0) return null
+	try {
+		let uri = path
+		if (uri.startsWith("http") || uri.startsWith("<svg") || uri.startsWith(svgDataURLPrefix)) {
+			return uri
+		}
+		if (uri.startsWith("file://")) {
+			return uri.substring("file://".length)
+		} else if (path.startsWith("/var/") || path.indexOf('Caches/uni-download') > 0) {
+			return path
+		}
+		return UTSiOS.getResourcePath(path)
+	} catch (e) {
+		return null
+	}
+
+}
+export function fileToDataUrl(path : string) : string | null {
+	try {
+		const svg = UTSiOS.try(String(contentsOfFile = path, encoding = String.Encoding.utf8))
+		const data = svg.data(using = String.Encoding.utf8)
+		const base64String = data?.base64EncodedString()
+		if(base64String == null) return null
+		// encodeURIComponent 支持
+		return svgDataURLPrefix + base64String!
+	} catch (e) {
+		return null
+	}
+}
+
+export function readFileContent(path: string): string|null {
+	try{
+		let content = UTSiOS.try(String(contentsOfFile = path, encoding = String.Encoding.utf8));
+		if (content != null) {
+			content = content.replace(/[\r\n]+/g, '');
+			content = content.replace(/\s+/g, ' ');
+			content = content.trim();
+		}
+		return content;
+	}catch(e){
+		return null
+	}
+}

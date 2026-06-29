@@ -1,0 +1,114 @@
+import { BuilderNode } from "@kit.ArkUI"
+import buffer from '@ohos.buffer';
+// import util from '@ohos.util';
+// import media from '@ohos.multimedia.media'
+// import image from '@ohos.multimedia.image'
+import { fileIo } from '@kit.CoreFileKit';
+import { getEnv } from '@dcloudio/uni-runtime';
+// 导入混编实现的声明式UI构建函数
+import { buildImage } from "./builder.ets"
+// import { getRealPath } from '@dcloudio/uni-runtime'
+// 定义 buildImage 的参数类型
+
+import { names } from './css-color-names.uts'
+import { hexColorToColorFilter } from './utils.uts'
+
+type RGB = { r : number, g : number, b : number }
+interface NativeImageOptions {
+	src : string | PixelMap
+	color ?: string
+	rgb ?: RGB
+	colorFilter ?: ColorFilter
+	// onClick : () => void
+	onError : (message : string) => void
+	onComplete : (event : ESObject) => void
+}
+
+
+function getResourcePath(src : string) : string {
+	const resourcePath = UTSHarmony.getResourcePath(src);
+	// 检查路径是否以/data/storage/开头
+	if (resourcePath.startsWith('/data/storage/')) {
+		return 'file://' + resourcePath;
+	}
+	return resourcePath;
+}
+
+export class NativeImage {
+	private $element : UniNativeViewElement;
+	private builder : BuilderNode<[NativeImageOptions]> | null = null
+	private svgMap : Map<string, string> = new Map<string, string>()
+	// 初始化 buildImage 默认参数
+	private params : NativeImageOptions = {
+		src: '',
+		// onClick: () => {
+		// 	this.$element.dispatchEvent(new UniNativeViewEvent("customClick", {}))
+		// },
+		onError: (message) => {
+			this.$element.dispatchEvent(new UniNativeViewEvent("error", { message }))
+		},
+		onComplete: (event : ESObject) => {
+			this.$element.dispatchEvent(new UniNativeViewEvent("load", {
+				width: event.width,
+				height: event.height
+			}))
+		},
+	}
+
+	constructor(element : UniNativeViewElement) {
+		// 绑定 wrapBuilder 函数
+		this.builder = element.bindHarmonyWrappedBuilder(wrapBuilder<[NativeImageOptions]>(buildImage), this.params)
+		this.$element = element
+		// 绑定当前实例为自定义的controller，方便其他地方通过 element 获取使用
+		this.$element.bindHarmonyController(this)
+	}
+
+	updateSrc(src : string) {
+		if (src.startsWith('data:image') || src.startsWith('<svg')) {
+			if (this.svgMap.has(src)) {
+				this.params.src = this.svgMap.get(src)!
+			} else {
+				const tempFileName = `${Date.now()}.svg`
+				const tempDirPath = `${getEnv().TEMP_PATH}/svg`
+				const tempFilePath : string = `${tempDirPath}/${tempFileName}`
+
+				if (!fileIo.accessSync(tempDirPath)) {
+					fileIo.mkdirSync(tempDirPath, true)
+				}
+
+				const file = fileIo.openSync(tempFilePath, fileIo.OpenMode.CREATE | fileIo.OpenMode.READ_WRITE);
+
+				if (src.startsWith('<svg')) {
+					fileIo.writeSync(file.fd, src);
+				} else {
+					const [metaInfo, encodedData] = src.split(',')
+					if (metaInfo.startsWith('data:image/svg+xml') && encodedData.startsWith('%3Csvg')) {
+						const decodedData = decodeURIComponent(encodedData);
+						if (decodedData == null) return
+						fileIo.writeSync(file.fd, decodedData!);
+					} else {
+						const uint8Array = buffer.from(encodedData, 'base64').buffer
+						// const base64 = new util.Base64Helper();
+						// const uint8Array = base64.decodeSync(encodedData);
+						fileIo.writeSync(file.fd, uint8Array);
+					}
+				}
+				// const path = getRealPath(tempFilePath)
+				const path = getResourcePath(tempFilePath)
+				this.svgMap.set(src, path)
+				this.params.src = path
+			}
+		}
+		else {
+			// this.params.src = getRealPath(src)
+			this.params.src = getResourcePath(src)
+		}
+		this.builder?.update(this.params)
+	}
+	updateColor(color : string) {
+		const _color = names.get(color) ?? color
+		this.params.color = _color
+		this.params.colorFilter = hexColorToColorFilter(_color)
+		this.builder?.update(this.params)
+	}
+}

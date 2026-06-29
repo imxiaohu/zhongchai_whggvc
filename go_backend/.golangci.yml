@@ -1,0 +1,197 @@
+run:
+  timeout: 5m
+  tests: true
+
+version: 2
+
+linters:
+  enable:
+    - errcheck
+    - govet
+    - staticcheck
+    - unused
+    - errorlint
+    - goconst
+    - gocritic
+    - gocyclo
+
+linters-settings:
+  gocyclo:
+    min-complexity: 50
+  goconst:
+    min-len: 3
+    min-occurrences: 3
+  gocritic:
+    enabled-tags:
+      - diagnostic
+      - performance
+      - style
+  govet:
+    check-shadowing: false
+  errcheck:
+    check-type-assertions: true
+    check-blank: true
+
+issues:
+  exclude-rules:
+    # 测试文件免除检查
+    - path: _test\.go
+      linters:
+        - goconst
+        - gocyclo
+
+    # loadtest 工具免除检查
+    - path: cmd/loadtest/
+      linters:
+        - errcheck
+        - gosec
+        - gocyclo
+        - goconst
+        - gocritic
+        - staticcheck
+        - unused
+
+    # 脚本工具免除检查
+    - path: scripts/
+      linters:
+        - errcheck
+        - gosec
+        - gocyclo
+        - goconst
+        - gocritic
+        - staticcheck
+        - unused
+
+    # 模板文件 magic strings
+    - path: config/dingtalk_templates\.go
+      linters:
+        - goconst
+    - path: config/email_templates\.go
+      linters:
+        - goconst
+    - path: config/sms_templates\.go
+      linters:
+        - goconst
+
+    # 控制器：errcheck 是 fire-and-forget patterns
+    - path: controllers/auth_login\.go
+      linters:
+        - errcheck
+        - gocyclo
+    - path: controllers/auth_wechat\.go
+      linters:
+        - errcheck
+    - path: controllers/comment\.go
+      linters:
+        - errcheck
+    - path: controllers/course_evaluation\.go
+      linters:
+        - errcheck
+        - gocyclo
+    - path: controllers/course_timetable\.go
+      linters:
+        - errcheck
+        - gocyclo
+    - path: controllers/course_fetch\.go
+      linters:
+        - errcheck
+        - gocyclo
+    - path: controllers/notification\.go
+      linters:
+        - errcheck
+    - path: controllers/report\.go
+      linters:
+        - errcheck
+    - path: controllers/upload\.go
+      linters:
+        - errcheck
+    - path: controllers/sync\.go
+      linters:
+        - errcheck
+    - path: controllers/pc_auth\.go
+      linters:
+        - errcheck
+        - gocyclo
+    - path: controllers/pc_school\.go
+      linters:
+        - errcheck
+    - path: controllers/proxy_controller\.go
+      linters:
+        - errcheck
+        - gocyclo
+    - path: controllers/auth_user\.go
+      linters:
+        - errcheck
+        - gocyclo
+    - path: controllers/cache_benchmark_test\.go
+      linters:
+        - errcheck
+        - gocyclo
+        - goconst
+    - path: controllers/offline_availability_test\.go
+      linters:
+        - errcheck
+        - gocyclo
+        - goconst
+
+    # 服务层：errcheck 是 fire-and-forget patterns
+    - path: services/cache_service\.go
+      linters:
+        - errcheck
+    - path: services/offline_cache_scheduler\.go
+      linters:
+        - errcheck
+    - path: services/offline_cache_service\.go
+      linters:
+        - errcheck
+    - path: services/rabbitmq_service\.go
+      linters:
+        - errcheck
+    - path: services/community_cache\.go
+      linters:
+        - errcheck
+    - path: services/smart_cache_service\.go
+      linters:
+        - errcheck
+    - path: services/sync_service\.go
+      linters:
+        - errcheck
+    - path: services/dingtalk_service\.go
+      linters:
+        - errcheck
+    - path: services/school_health_check\.go
+      linters:
+        - errcheck
+    - path: services/qiniu_service\.go
+      linters:
+        - errcheck
+
+    # 工具层：errcheck 是 fire-and-forget patterns
+    - path: utils/auto_login_test\.go
+      linters:
+        - errcheck
+        - gocyclo
+        - goconst
+    - path: utils/ocr\.go
+      linters:
+        - errcheck
+    - path: utils/auto_login_lock\.go
+      linters:
+        - errcheck
+        - staticcheck
+    - path: utils/proxy\.go
+      linters:
+        - errcheck
+
+    # SetNX 弃用：redis API 版本差异
+    - path: utils/auto_login_lock\.go
+      linters:
+        - staticcheck
+
+    # io/ioutil 内联问题：Go 版本缓存差异
+    - path: controllers/wechat_pay_callback\.go
+      linters:
+        - govet
+    - path: services/wechat_pay_service\.go
+      linters:
+        - govet

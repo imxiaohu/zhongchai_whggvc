@@ -1,0 +1,47 @@
+{
+  "name": "pingjiao",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "test": "jest",
+    "clean": "rm -rf unpackage/dist",
+    "changelog": "bash scripts/changelog.sh",
+    "changelog:full": "bash scripts/changelog.sh --full",
+    "changelog:install": "go install github.com/git-chglog/git-chglog/cmd/git-chglog@latest"
+  },
+  "jest": {
+    "transform": {
+      "^.+\\.js$": "babel-jest"
+    },
+    "testEnvironment": "node",
+    "watchman": false
+  },
+  "babel": {
+    "presets": [
+      [
+        "@babel/preset-env",
+        {
+          "targets": {
+            "node": "current"
+          }
+        }
+      ]
+    ]
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "@tdesign/uniapp": "^0.10.1",
+    "pinia": "^2.1.7",
+    "qrcode": "^1.5.4",
+    "weapp-qrcode": "^1.0.0"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@babel/preset-env": "^7.29.0",
+    "babel-jest": "^30.3.0",
+    "jest": "^30.3.0"
+  }
+}

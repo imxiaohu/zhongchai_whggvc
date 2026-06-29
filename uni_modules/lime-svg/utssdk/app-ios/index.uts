@@ -1,0 +1,175 @@
+import { UIImage, UIView, UIImageView } from "UIKit"
+import { CIImage, CIFilter, CIVector, CIContext, kCIInputImageKey } from "CoreImage"
+import { SVGKImage } from "SVGKit"  assert { type: "implementationOnly" };
+import { getResourcePath, svgDataURLPrefix, readFileContent } from './fileUtils'
+import { processSvgString, getSvgImage, createColoredUIImage } from './utils'
+
+type ImageTask = {
+    svg: UIImage | null,
+    color: string | null
+}
+
+export class NativeImage {
+    $element: UniNativeViewElement;
+    svg: UIImage | null
+    imageView: UIImageView | null
+    color: string | null = null
+    svgMap: Map<string, UIImage> = new Map<string, UIImage>()
+
+    private taskQueue: ImageTask[] = []
+    private isProcessing: boolean = false
+    private taskCounter: number = 0
+
+    constructor(element: UniNativeViewElement) {
+        this.$element = element;
+        super.init()
+        this.bindView();
+    }
+
+    bindView() {
+        this.imageView = new UIImageView()
+        this.imageView!.contentMode = UIView.ContentMode.scaleAspectFit
+        this.imageView!.isUserInteractionEnabled = true
+        this.imageView!.clipsToBounds = true
+        this.$element.bindIOSView(this.imageView!);
+    }
+
+    private emit(type: string, detail: UTSJSONObject) {
+        let event = new UniNativeViewEvent(type, detail)
+        this.$element.dispatchEvent(event)
+    }
+
+    private enqueueUpdateTask(): number {
+        this.taskCounter += 1
+        const taskId = this.taskCounter
+
+        this.taskQueue.push({
+            svg: this.svg,
+            color: this.color
+        })
+
+        if (!this.isProcessing) {
+            this.processQueue()
+        }
+
+        return taskId
+    }
+
+    private processQueue() {
+        this.isProcessing = true
+
+        this.processNextTask()
+    }
+
+    private processNextTask() {
+        if (this.taskQueue.length === 0) {
+            this.isProcessing = false
+            return
+        }
+
+        const task = this.taskQueue.shift()
+        if (task == null) {
+            this.isProcessing = false
+            return
+        }
+
+        this.processTask(task).then(() => {
+            DispatchQueue.main.async(execute = () => {
+                this.processNextTask()
+            })
+        }).catch(() => {
+            DispatchQueue.main.async(execute = () => {
+                this.processNextTask()
+            })
+        })
+    }
+
+    private processTask(task: ImageTask): Promise<void> {
+        const { svg, color } = task
+
+        if (svg == null) {
+            return Promise.resolve() as Promise<void>
+        }
+
+        if (color == null || color.length == 0) {
+            return new Promise<void>((resolve) => {
+                DispatchQueue.main.async(execute = () => {
+                    if (this.imageView != null) {
+                        this.imageView!.image = svg!
+                    }
+                    resolve()
+                })
+            })
+        } else {
+            return new Promise<void>((resolve) => {
+                DispatchQueue.global(qos = DispatchQoS.QoSClass.userInitiated).async(execute = () => {
+                    const coloredImage = createColoredUIImage(svg!, color)
+
+                    DispatchQueue.main.async(execute = () => {
+                        if (this.imageView != null) {
+                            this.imageView!.image = coloredImage
+                        }
+                        resolve()
+                    })
+                })
+            })
+        }
+    }
+
+    clearQueue() {
+        this.taskQueue = []
+    }
+
+    private update() {
+        this.enqueueUpdateTask()
+    }
+
+    updateSrc(src: string) {
+        const path = getResourcePath(src);
+        if (path == null) return
+        try {
+            if (this.svgMap.has(src)) {
+                this.svg = this.svgMap.get(src)!
+            }
+			
+            else if (path!.startsWith('<svg') || path!.startsWith(svgDataURLPrefix)) {
+                const svgString = processSvgString(path!)
+                if (svgString == null) return
+                const svgImage = getSvgImage(svgString!, this.$element)
+                if (svgImage == null) return
+                this.svg = svgImage
+                this.svgMap.set(src, svgImage!)
+            } else {
+                if (path!.startsWith('http')) return
+                const _svgContent = readFileContent(path!)
+                if (_svgContent == null) return
+                const svgString = processSvgString(_svgContent ?? '')
+                const svgImage = getSvgImage(svgString!, this.$element)
+                if (svgImage == null) return
+                this.svg = svgImage
+                this.svgMap.set(src, svgImage!)
+            }
+            this.update()
+            this.emit('load', {
+                detail: {
+                    width: this.$element.offsetWidth,
+                    height: this.$element.offsetHeight
+                }
+            })
+        } catch (e) {
+            this.emit('error', { errMsg: e.message })
+        }
+    }
+
+    updateColor(color: string) {
+        this.color = color
+		if(this.svg == null) return
+        this.update()
+    }
+
+    destroy() {
+        this.clearQueue()
+        this.isProcessing = false
+        UTSiOS.destroyInstance(this)
+    }
+}

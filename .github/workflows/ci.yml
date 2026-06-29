@@ -1,0 +1,290 @@
+name: CI Pipeline
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+  security-events: write
+  actions: read
+
+env:
+  GO_VERSION: '1.21'
+  NODE_VERSION: '18'
+
+jobs:
+  # ─── Lint & Security Scan ───────────────────────────────────────────────
+  lint-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Go setup + golangci-lint ────────────────────────────────────
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go_backend/go.sum
+
+      - name: Install golangci-lint
+        run: |
+          curl -sSfL https://raw.githubusercontent.com/golangci/golangci-lint/master/install.sh | sh -s -- -b ~/go/bin v1.62.2
+
+      - name: Run golangci-lint
+        working-directory: go_backend
+        run: ~/go/bin/golangci-lint run ./... || true
+
+      # ── Go security: gosec ───────────────────────────────────────────
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run gosec
+        working-directory: go_backend
+        run: ~/go/bin/gosec -fmt json -out=gosec-results.json ./... || true
+
+      # ── Go security: semgrep ─────────────────────────────────────────
+      - name: Run semgrep (Go)
+        uses: returntocorp/semgrep-action@v1
+        with:
+          config: auto,security,a11y,correctness,naming,performance,portability,best-practice
+
+      # ── Go CodeQL ───────────────────────────────────────────────────
+      - name: Initialize Go CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: go
+          queries: security-extended
+
+      - name: Perform Go CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:go"
+          upload: always
+
+      # ── Node.js setup ────────────────────────────────────────────────
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Cache node_modules
+        uses: actions/cache@v4
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-npm-${{ hashFiles('package-lock.json') }}
+
+      - name: Install dependencies
+        run: npm ci
+
+      # ── Frontend lint: ESLint ────────────────────────────────────────
+      - name: Run ESLint
+        run: npx eslint . --max-warnings 0 --format json --output-file eslint-results.json || true
+
+      # ── Frontend security: npm audit ─────────────────────────────────
+      - name: Run npm audit
+        run: npm audit --audit-level=high --json --output=npm-audit.json || true
+
+      # ── JS/TS CodeQL ─────────────────────────────────────────────────
+      - name: Initialize JS/TS CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+          queries: security-extended
+
+      - name: Perform JS/TS CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:javascript"
+          upload: always
+
+      # ── Upload security artifacts ───────────────────────────────────
+      - name: Upload ESLint results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: eslint-results
+          path: eslint-results.json
+          retention-days: 30
+
+      - name: Upload npm audit results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: npm-audit-results
+          path: npm-audit.json
+          retention-days: 30
+
+      - name: Upload gosec results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gosec-results
+          path: go_backend/gosec-results.json
+          retention-days: 30
+
+      - name: Upload semgrep results (Go)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: semgrep-results-go
+          path: semgrep-go.json
+          retention-days: 30
+
+  # ─── Tests ─────────────────────────────────────────────────────────────
+  test:
+    runs-on: ubuntu-latest
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: testroot
+          MYSQL_DATABASE: pingjiao_test
+          MYSQL_USER: pingjiao
+          MYSQL_PASSWORD: pingjiaotest
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      GIN_MODE: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USER: pingjiao
+      DB_PASSWORD: pingjiaotest
+      DB_NAME: pingjiao_test
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ""
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # ── Go backend tests ────────────────────────────────────────────
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go_backend/go.sum
+
+      - name: Download Go module dependencies
+        working-directory: go_backend
+        run: go mod download
+
+      - name: Run Go tests with coverage
+        working-directory: go_backend
+        env:
+          GIN_MODE: test
+        run: |
+          go test ./... \
+            -coverprofile=coverage.out \
+            -covermode=atomic \
+            -race \
+            -v 2>&1 | tee test-results.txt
+          echo "--- coverage ---"
+          go tool cover -func=coverage.out
+
+      - name: Upload Go coverage report
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-coverage-report
+          path: go_backend/coverage.out
+          retention-days: 30
+
+      # ── Frontend tests ───────────────────────────────────────────────
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run frontend tests
+        run: npm test -- --coverage --json --outputFile=frontend-coverage/jest-results.json || true
+
+      - name: Upload frontend coverage
+        uses: actions/upload-artifact@v4
+        with:
+          name: frontend-coverage
+          path: frontend-coverage
+          retention-days: 30
+
+  # ─── Multi-platform Build ───────────────────────────────────────────────
+  build-multiplatform:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        platform:
+          - os: linux
+            arch: amd64
+          - os: linux
+            arch: arm64
+          - os: darwin
+            arch: amd64
+          - os: darwin
+            arch: arm64
+          - os: windows
+            arch: amd64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go_backend/go.sum
+
+      - name: Build binary
+        working-directory: go_backend
+        env:
+          GOOS: ${{ matrix.platform.os }}
+          GOARCH: ${{ matrix.platform.arch }}
+          CGO_ENABLED: 0
+          OUTPUT_NAME: pingjiao-${{ matrix.platform.os }}-${{ matrix.platform.arch }}
+        run: |
+          echo "Building for ${GOOS}/${GOARCH}..."
+          go build -ldflags="-s -w" \
+            -o "${OUTPUT_NAME}" \
+            -trimpath .
+
+      - name: Package binary
+        working-directory: go_backend
+        env:
+          OUTPUT_NAME: pingjiao-${{ matrix.platform.os }}-${{ matrix.platform.arch }}
+        run: |
+          if [ "${{ matrix.platform.os }}" = "windows" ]; then
+            zip "${OUTPUT_NAME}.zip" "${OUTPUT_NAME}.exe"
+          else
+            tar -czf "${OUTPUT_NAME}.tar.gz" "${OUTPUT_NAME}"
+          fi
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.platform.os }}-${{ matrix.platform.arch }}
+          path: |
+            go_backend/pingjiao-${{ matrix.platform.os }}-${{ matrix.platform.arch }}.tar.gz
+            go_backend/pingjiao-${{ matrix.platform.os }}-${{ matrix.platform.arch }}.zip
+          retention-days: 7

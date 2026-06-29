@@ -1,0 +1,147 @@
+name: Notify
+
+on:
+  workflow_run:
+    workflows:
+      - CI Pipeline
+      - Deploy to CentOS
+      - Release
+      - Scheduled Tasks
+    types: [completed]
+
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' ||
+      github.event.workflow_run.conclusion == 'cancelled'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Get workflow run info
+        id: run-info
+        run: |
+          echo "workflow_name=${{ github.event.workflow_run.name }}" >> $GITHUB_OUTPUT
+          echo "workflow_status=${{ github.event.workflow_run.conclusion }}" >> $GITHUB_OUTPUT
+          echo "run_id=${{ github.event.workflow_run.id }}" >> $GITHUB_OUTPUT
+          echo "run_url=https://github.com/${{ github.repository }}/actions/runs/${{ github.event.workflow_run.id }}" >> $GITHUB_OUTPUT
+          echo "actor=${{ github.event.workflow_run.actor.login }}" >> $GITHUB_OUTPUT
+          echo "repo=${{ github.repository }}" >> $GITHUB_OUTPUT
+
+      # ── Build notification payload ──────────────────────────────────
+      - name: Build notification message
+        id: message
+        run: |
+          WORKFLOW="${{ steps.run-info.outputs.workflow_name }}"
+          STATUS="${{ steps.run-info.outputs.workflow_status }}"
+          RUN_URL="${{ steps.run-info.outputs.run_url }}"
+          ACTOR="${{ steps.run-info.outputs.actor }}"
+          REPO="${{ steps.run-info.outputs.repo }}"
+
+          if [ "$STATUS" = "failure" ]; then
+            EMOJI="❌"
+            STATUS_TEXT="失败"
+          else
+            EMOJI="⚠️"
+            STATUS_TEXT="被取消"
+          fi
+
+          cat <<EOF > notification_payload.json
+          {
+            "msg_type": "text",
+            "content": {
+              "text": "${EMOJI} ${WORKFLOW} ${STATUS_TEXT}\n仓库: ${REPO}\n触发人: @${ACTOR}\n链接: ${RUN_URL}"
+            }
+          }
+          EOF
+          echo "payload_file=notification_payload.json" >> $GITHUB_OUTPUT
+
+      # ── Feishu ─────────────────────────────────────────────────────
+      - name: Notify Feishu
+        if: vars.FEISHU_ENABLED == 'true'
+        env:
+          FEISHU_WEBHOOK_URL: ${{ secrets.FEISHU_WEBHOOK_URL }}
+        run: |
+          [ -z "$FEISHU_WEBHOOK_URL" ] && echo "FEISHU_WEBHOOK_URL not set, skipping" && exit 0
+          curl -s -X POST "$FEISHU_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d @"${{ steps.message.outputs.payload_file }}"
+
+      # ── DingTalk ───────────────────────────────────────────────────
+      - name: Notify DingTalk
+        if: vars.DINGTALK_ENABLED == 'true'
+        env:
+          DINGTALK_WEBHOOK_URL: ${{ secrets.DINGTALK_WEBHOOK_URL }}
+        run: |
+          [ -z "$DINGTALK_WEBHOOK_URL" ] && echo "DINGTALK_WEBHOOK_URL not set, skipping" && exit 0
+          WORKFLOW="${{ steps.run-info.outputs.workflow_name }}"
+          STATUS="${{ steps.run-info.outputs.workflow_status }}"
+          RUN_URL="${{ steps.run-info.outputs.run_url }}"
+          ACTOR="${{ steps.run-info.outputs.actor }}"
+
+          if [ "$STATUS" = "failure" ]; then
+            EMOJI="❌"
+          else
+            EMOJI="⚠️"
+          fi
+
+          curl -s -X POST "$DINGTALK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"msgtype\": \"markdown\",
+              \"markdown\": {
+                \"title\": \"钉钉 ${WORKFLOW} ${STATUS}\",
+                \"text\": \"### 钉钉 ${EMOJI} ${WORKFLOW} ${STATUS}\\n\\n**仓库**: ${{ github.repository }}\\n**触发人**: ${ACTOR}\\n**链接**: ${RUN_URL}\"
+              }
+            }"
+
+      # ── WeCom (企业微信) ────────────────────────────────────────────
+      - name: Notify WeCom
+        if: vars.WECOM_ENABLED == 'true'
+        env:
+          WECOM_WEBHOOK_URL: ${{ secrets.WECOM_WEBHOOK_URL }}
+        run: |
+          [ -z "$WECOM_WEBHOOK_URL" ] && echo "WECOM_WEBHOOK_URL not set, skipping" && exit 0
+          WORKFLOW="${{ steps.run-info.outputs.workflow_name }}"
+          STATUS="${{ steps.run-info.outputs.workflow_status }}"
+          RUN_URL="${{ steps.run-info.outputs.run_url }}"
+          ACTOR="${{ steps.run-info.outputs.actor }}"
+
+          curl -s -X POST "$WECOM_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"msgtype\": \"markdown\",
+              \"markdown\": {
+                \"content\": \"### ${WORKFLOW} **${STATUS}**\\n> 仓库: ${{ github.repository }}\\n> 触发人: ${ACTOR}\\n> 链接: ${RUN_URL}\"
+              }
+            }"
+
+      # ── Slack ───────────────────────────────────────────────────────
+      - name: Notify Slack
+        if: vars.SLACK_ENABLED == 'true'
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+        run: |
+          [ -z "$SLACK_WEBHOOK_URL" ] && echo "SLACK_WEBHOOK_URL not set, skipping" && exit 0
+          WORKFLOW="${{ steps.run-info.outputs.workflow_name }}"
+          STATUS="${{ steps.run-info.outputs.workflow_status }}"
+          RUN_URL="${{ steps.run-info.outputs.run_url }}"
+          ACTOR="${{ steps.run-info.outputs.actor }}"
+
+          if [ "$STATUS" = "failure" ]; then
+            EMOJI_STATUS=":x:"
+          else
+            EMOJI_STATUS=":warning:"
+          fi
+
+          curl -s -X POST "$SLACK_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -d "{
+              \"text\": \"${EMOJI_STATUS} ${WORKFLOW} ${STATUS}\\nRepo: <https://github.com/${{ github.repository }}|${{ github.repository }}>\\nActor: ${ACTOR}\\nRun: <${RUN_URL}|View details>\"
+            }"

@@ -1,0 +1,229 @@
+name: Scheduled Tasks
+
+on:
+  schedule:
+    # 每日全量测试: 每天 02:00 Asia/Shanghai = UTC 18:00
+    - cron: '0 18 * * *'
+  workflow_dispatch:
+    inputs:
+      task:
+        description: 'Task to run'
+        required: true
+        default: 'all'
+        type: choice
+        options:
+          - all
+          - test
+          - security
+          - dependency-health
+          - cleanup
+
+permissions:
+  contents: read
+  actions: write
+
+env:
+  GO_VERSION: '1.21'
+  NODE_VERSION: '18'
+
+jobs:
+  # ─── Daily Full Test ───────────────────────────────────────────────────
+  daily-test:
+    name: Daily Test
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.task == 'all' || github.event.inputs.task == 'test'
+    services:
+      mysql:
+        image: mysql:8
+        env:
+          MYSQL_ROOT_PASSWORD: testroot
+          MYSQL_DATABASE: pingjiao_test
+          MYSQL_USER: pingjiao
+          MYSQL_PASSWORD: pingjiaotest
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      GIN_MODE: test
+      DB_HOST: 127.0.0.1
+      DB_PORT: 3306
+      DB_USER: pingjiao
+      DB_PASSWORD: pingjiaotest
+      DB_NAME: pingjiao_test
+      REDIS_HOST: 127.0.0.1
+      REDIS_PORT: 6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go_backend/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - name: Run backend tests
+        working-directory: go_backend
+        env:
+          GIN_MODE: test
+        run: go test ./... -v -race -coverprofile=coverage.out
+
+      - name: Run frontend tests
+        run: npm ci && npm test -- --coverage --json --outputFile=test-results.json || true
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-test-results-${{ github.run_date }}
+          path: |
+            go_backend/coverage.out
+            test-results.json
+          retention-days: 30
+
+  # ─── Weekly Security Scan ───────────────────────────────────────────────
+  weekly-security:
+    name: Weekly Security Scan
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule' || github.event.inputs.task == 'all' || github.event.inputs.task == 'security'
+    # Run only on Mondays (cron '0 19 * * 1')
+    steps:
+      - uses: actions/checkout@v4
+
+      # Go setup
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go_backend/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # gosec full scan
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run gosec
+        working-directory: go_backend
+        run: ~/go/bin/gosec -fmt json -severity high -confidence high -out=gosec-full.json ./... || true
+
+      # npm audit
+      - name: Run npm audit
+        run: npm ci && npm audit --audit-level=high --json --output=npm-audit-full.json || true
+
+      # trivy (container vulnerability scan on docker images used)
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@master
+        with:
+          scan-type: 'fs'
+          scan-ref: '.'
+          format: 'json'
+          output: trivy-results.json
+          severity: 'HIGH,CRITICAL'
+          exit-code: '0'
+
+      - name: Upload security reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: weekly-security-reports-${{ github.run_date }}
+          path: |
+            go_backend/gosec-full.json
+            npm-audit-full.json
+            trivy-results.json
+          retention-days: 90
+
+  # ─── Dependency Health Check ────────────────────────────────────────────
+  dependency-health:
+    name: Dependency Health Check
+    runs-on: ubuntu-latest
+    # Every Wednesday at 03:00 UTC = 11:00 Asia/Shanghai
+    if: github.event_name == 'schedule' || github.event.inputs.task == 'all' || github.event.inputs.task == 'dependency-health'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go_backend/go.sum
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # Check for outdated Go modules
+      - name: Check outdated Go modules
+        working-directory: go_backend
+        run: |
+          go install github.com/psampaz/go-mod-outdated@latest
+          ~/go/bin/go-mod-outdated -direct -json | tee go-mod-outdated.json || true
+
+      # Check for outdated npm packages
+      - name: Check outdated npm packages
+        run: |
+          npm install -g npm-check-updates 2>/dev/null || true
+          npx npm-check-updates --deep --json --packageFile package.json | tee ncu-report.json || true
+
+      - name: Upload health reports
+        uses: actions/upload-artifact@v4
+        with:
+          name: dependency-health-${{ github.run_date }}
+          path: |
+            go_backend/go-mod-outdated.json
+            ncu-report.json
+          retention-days: 90
+
+  # ─── Stale Branch Cleanup ───────────────────────────────────────────────
+  cleanup:
+    name: Stale Branch Cleanup
+    runs-on: ubuntu-latest
+    # First day of month at 04:00 UTC = 12:00 Asia/Shanghai
+    if: github.event_name == 'schedule' || github.event.inputs.task == 'all' || github.event.inputs.task == 'cleanup'
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: List merged PR branches
+        run: |
+          echo "Fetching merged PR branches..."
+          gh pr list --state closed --base main --json headRefName --jq '.[].headRefName' 2>/dev/null | \
+            while read branch; do
+              if [ -n "$branch" ]; then
+                echo "Branch to delete: $branch"
+                git push origin --delete "$branch" 2>/dev/null || \
+                  echo "Could not delete branch $branch (may not exist or no permission)"
+              fi
+            done
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

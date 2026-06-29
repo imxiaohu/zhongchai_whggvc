@@ -1,0 +1,291 @@
+import { UIImage } from "UIKit"
+import { CIImage, CIFilter, CIVector, CIContext, kCIInputImageKey } from "CoreImage"
+// import { SVGKImage } from "SVGKit"
+import { SVGKImage } from "SVGKit"  assert { type: "implementationOnly" };
+import { URL, Data, URLSession } from 'Foundation'
+import { getResourcePath, svgDataURLPrefix, fileToDataUrl, readFileContent } from './fileUtils'
+import { CGFloat } from 'CoreFoundation';
+// let svgDataURLPrefix = "data:image/svg+xml;base64,"
+// export function getResourcePath(path : string) : string | null {
+// 	try{
+// 		let uri = path
+// 		if (uri.startsWith("http") || uri.startsWith("<svg") || uri.startsWith(svgDataURLPrefix)) {
+// 			return uri
+// 		}
+// 		if (uri.startsWith("file://")) {
+// 			return uri.substring("file://".length)
+// 		} else if (path.startsWith("/var/")) {
+// 			return path
+// 		}
+// 		return UTSiOS.getResourcePath(path)
+// 	}catch(e){
+// 		return null
+// 	}
+
+// }
+let colorImageCache = new Map<string, UIImage>()
+export function createColoredUIImage(svgImage : UIImage, color : string) : UIImage {
+	try {
+		// 生成缓存key
+		let cacheKey = `${color}_${svgImage.size.width}_${svgImage.size.height}_${svgImage.hash}`
+		if (colorImageCache.has(cacheKey)) {
+			return colorImageCache.get(cacheKey)!
+		}
+
+		let tintColor = UTSiOS.colorWithString(color)
+		let size = svgImage.size
+		// 使用更高的scale来抗锯齿
+		let scale = CGFloat(1.0)//svgImage.scale * 1.0 // 2倍分辨率
+		UIGraphicsBeginImageContextWithOptions(size, false, scale)
+
+		let context = UIGraphicsGetCurrentContext()
+		if (context == null) return svgImage
+
+		let rect = CGRectMake(0, 0, size.width, size.height)
+
+		// 1. 先绘制SVG
+		svgImage.draw(in = rect)
+		
+		// 检查 cgImage 是否为空
+		let cgImage = svgImage.cgImage
+		if (cgImage == null) {
+			// 如果没有 cgImage，直接填充颜色作为降级方案
+			context!.setFillColor(tintColor.cgColor)
+			context!.fill(rect)
+		} else {
+			// 关键：翻转坐标系！
+			context!.translateBy(x = 0, y = size.height)
+			context!.scaleBy(x = 1.0, y = -1.0)
+			context!.clip(to = rect, mask = cgImage!)
+			// 2. 设置混合模式
+			context!.setBlendMode(CGBlendMode.lighten)
+			// 3. 填充颜色（会与SVG混合）
+			context!.setFillColor(tintColor.cgColor)
+			context!.fill(rect)
+		}
+
+		let resultImage = UIGraphicsGetImageFromCurrentImageContext()
+		UIGraphicsEndImageContext()
+
+		return resultImage != null ? resultImage! : svgImage
+
+
+
+		// let tintColor = UTSiOS.colorWithString(color)
+		// let red : CGFloat = 0
+		// let green : CGFloat = 0
+		// let blue : CGFloat = 0
+		// let alpha : CGFloat = 0
+		// tintColor.getRed(UTSiOS.getPointer(red), green = UTSiOS.getPointer(green), blue = UTSiOS.getPointer(blue), alpha = UTSiOS.getPointer(alpha))
+
+		// let ciImage = new CIImage(image = svgImage);
+
+		// // 创建颜色
+		// let colorFilter = new CIFilter(name = "CIColorMatrix")!
+
+		// colorFilter.setValue(ciImage, forKey = kCIInputImageKey)
+		// // 加法
+		// colorFilter.setValue(CIVector(x = 1, y = 0, z = 0, w = red), forKey = 'inputRVector')
+		// colorFilter.setValue(CIVector(x = 0, y = 1, z = 0, w = green), forKey = 'inputGVector')
+		// colorFilter.setValue(CIVector(x = 0, y = 0, z = 1, w = blue), forKey = 'inputBVector')
+		// colorFilter.setValue(CIVector(x = 0, y = 0, z = 0, w = 1), forKey = 'inputAVector')
+
+		// // colorFilter.setValue(CIVector(x= red, y= 0, z= 0, w= 0), forKey= 'inputRVector')
+		// // colorFilter.setValue(CIVector(x= 0, y= green, z= 0, w= 0), forKey= 'inputGVector')
+		// // colorFilter.setValue(CIVector(x= 0, y= 0, z= blue, w= 0), forKey= 'inputBVector')
+		// // colorFilter.setValue(CIVector(x= 0, y= 0, z= 0, w= 1), forKey= 'inputAVector')
+
+		// let filteredCIImage = colorFilter.outputImage
+		// if (filteredCIImage == null) return svgImage
+
+
+		// let context = new CIContext(options = null)
+		// let cgImage = context.createCGImage(filteredCIImage!, from = filteredCIImage!.extent)
+		// if (cgImage == null) return svgImage
+		// return new UIImage(cgImage = cgImage!)
+	} catch (e) {
+		return svgImage
+	}
+
+}
+
+export function processSvgString(path : string) : string | null {
+	let svgString = path
+	if (svgString.startsWith(svgDataURLPrefix)) {
+		const base64Data = svgString.split("base64,")[1]
+		const data = new Data(base64Encoded = base64Data);
+		if (data == null) return null
+		const _svgString = String(data = data!, encoding = String.Encoding.utf8);
+		if (_svgString == null) return null
+		if (!_svgString!.startsWith('<')) return null
+		svgString = _svgString!
+	}
+	// 移除换行和制表符
+	let normalized = svgString.replace(/[\t\r\n]/g, '');
+
+	// 解析 viewBox
+	const viewBoxMatch = normalized.match(/viewBox="([^"]*)"/);
+	if (viewBoxMatch == null) {
+		return normalized;
+	}
+	const viewBox = `${viewBoxMatch![1]}`.split(/\s+/).map((item) : number => parseInt(item));
+	const width = viewBox.length > 2 ? viewBox[2] : 100
+	const height = viewBox.length > 3 ? viewBox[3] : 100
+	// 移除原有的 width 和 height
+	normalized = normalized.replace(/(width)="[^"]*"/, '');
+	normalized = normalized.replace(/(height)="[^"]*"/, '');
+
+	// 添加响应式属性
+	return normalized.replace('<svg', `<svg width="${width}px" height="${height}px"`);
+
+	// return svgString.replace(/(width|height)="\d+(\.\d+)?([a-z]+)?"/g, '').replace(/[\t\r\n]/g, '');
+}
+
+export function getSvgImage(svgString : string, containerEl : UniNativeViewElement) : UIImage | null {
+	let fileData = svgString.data(using = String.Encoding.utf8)!;
+	// let svgImage = new SVGKImage(data = fileData).uiImage
+	let svgImage = new SVGKImage(data = fileData)//.uiImage
+	if (svgImage == null) return null
+
+	// const width:CGFloat = CGFloat(el.offsetWidth)// svgImage!.size.width
+	// const height:CGFloat = CGFloat(el.offsetHeight) // svgImage!.size.height
+	// const scale:CGFloat = (width > 100 ? 1.0 : 2.0) // UIScreen.main.scale
+	// svgImage!.size = CGSize(width = width * scale, height = height * scale)
+
+
+	// 容器尺寸
+	const containerWidth = containerEl.offsetWidth
+	const containerHeight = containerEl.offsetHeight
+
+	// 容器最小边
+	const minSide = CGFloat(Math.min(containerWidth, containerHeight))
+	const minScale = CGFloat(containerWidth > 100 ? 1.0 : 2.0)
+	// SVG原始尺寸
+	const originalSize = svgImage!.size
+	
+	
+	if (originalSize.width > 0 && originalSize.height > 0) {
+		let newWidth : CGFloat, newHeight : CGFloat
+
+		if (containerWidth <= containerHeight) {
+			// 宽度是较小边
+			const scale = minSide / originalSize.width
+			newWidth = minSide
+			newHeight = originalSize.height * scale
+		} else {
+			// 高度是较小边
+			const scale = minSide / originalSize.height
+			newWidth = originalSize.width * scale
+			newHeight = minSide
+		}
+		// 设置尺寸
+		svgImage!.size = CGSize(width = newWidth * minScale, height = newHeight * minScale)
+	} else {
+		// 默认正方形
+		svgImage!.size = CGSize(width = minSide * minScale, height = minSide * minScale)
+	}
+
+
+	return svgImage!.uiImage
+}
+
+
+
+export function setSvgImage(src : string, color : string, cb : (image : UIImage | null) => void) {
+	if ([null, ''].includes(src)) return cb(null)
+	const path : string = getResourcePath(src) ?? '';
+	if (path == '') return cb(null)
+	if (path.startsWith('<') || path.startsWith(svgDataURLPrefix)) {
+		try {
+			const svgString = processSvgString(path)
+			if (svgString == null) return cb(null)
+			const svgImage = getSvgImage(svgString!)
+			if (svgImage == null) return cb(null)
+			// cb(svgImage)
+			const image = createColoredUIImage(svgImage!, color)
+			cb(image)
+		} catch (e) {
+			cb(null)
+		}
+	} else if (path.startsWith('http')) {
+		try {
+			let url = new URL(string = path)
+			let session = URLSession.shared
+			let task = session.dataTask(with = url!, completionHandler = (data, response, error) : void => {
+				if (data != null) {
+					try {
+						const _svgString = String(data = data!, encoding = String.Encoding.utf8);
+						const svgString = processSvgString(_svgString!)
+						const svgImage = getSvgImage(svgString!)
+						// cb(svgImage)
+						const image = createColoredUIImage(svgImage!, color)
+						cb(image)
+					} catch (e) {
+						cb(null)
+					}
+				} else {
+					cb(null)
+				}
+			})
+			task.resume()
+		} catch (e) {
+			cb(null)
+		}
+		// try {
+		// 	uni.request({
+		// 		url: path,
+		// 		dataType: 'text',
+		// 		success: (res : RequestSuccess<UTSJSONObject>) => {
+		// 			// const svgString = processSvgString(res.get('data') ?? '')
+		// 			// // const svgString = processSvgString(res.data ?? '')
+		// 			// if (svgString == null) return cb(null)
+		// 			// const svgImage = getSvgImage(svgString!)
+		// 			// if (svgImage == null) return cb(null)
+		// 			// const image = createColoredUIImage(svgImage!, color)
+		// 			// cb(image)
+		// 		},
+		// 		fail: (err) => {
+		// 			// console.warn('[lime-svg]: ' + JSON.stringify(err))
+		// 			cb(null)
+		// 		}
+		// 	})
+
+		// } catch (e) {
+		// 	try {
+		// 		let url = new URL(string = path)
+		// 		let session = URLSession.shared
+		// 		let task = session.dataTask(with = url!, completionHandler = (data, response, error) : void => {
+		// 			if (data != null) {
+		// 				try {
+		// 					const _svgString = String(data = data!, encoding = String.Encoding.utf8);
+		// 					const svgString = processSvgString(_svgString!)
+		// 					const svgImage = getSvgImage(svgString!)
+		// 					const image = createColoredUIImage(svgImage!, color)
+		// 					cb(image)
+		// 				} catch (e) {
+		// 					cb(null)
+		// 				}
+		// 			} else {
+		// 				cb(null)
+		// 			}
+		// 		})
+		// 		task.resume()
+		// 	} catch (e) {
+		// 		cb(null)
+		// 	}
+		// }
+	} else {
+		try {
+			const _svgContent = readFileContent(path)
+			// const _svgString = fileToDataUrl(path) //UTSiOS.try(String(contentsOfFile = path, encoding = String.Encoding.utf8));
+			if (_svgContent == null) return cb(null)
+			const svgString = processSvgString(_svgContent ?? '')
+			const svgImage = getSvgImage(svgString!)
+			// cb(svgImage)
+			const image = createColoredUIImage(svgImage!, color)
+			cb(image)
+		} catch (e) {
+			cb(null)
+		}
+	}
+}

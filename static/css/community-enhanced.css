@@ -1,0 +1,254 @@
+/* 社区页面增强样式 - 全局应用 v3 - Blue Theme */
+
+/* 扩展的 CSS 变量 */
+:root {
+  /* 社区特定颜色 */
+  --community-primary: #3b82f6;
+  --community-secondary: #2563eb;
+  --community-accent: #60a5fa;
+  
+  /* 状态颜色 */
+  --status-online: #10b981;
+  --status-offline: #6b7280;
+  --status-busy: #f59e0b;
+  --status-away: #ef4444;
+  
+  /* 内容类型颜色 */
+  --type-article: #3b82f6;
+  --type-announcement: #f59e0b;
+  --type-activity: #10b981;
+  --type-discussion: #8b5cf6;
+  
+  /* 交互状态颜色 */
+  --like-color: #ef4444;
+  --like-bg: rgba(239, 68, 68, 0.1);
+  --comment-color: #64748b;
+  --share-color: #6366f1;
+
+  /* 特殊阴影 */
+  --shadow-xl: 0 12px 40px rgba(0, 0, 0, 0.1);
+  --shadow-primary: 0 4px 14px rgba(99, 102, 241, 0.3);
+  --shadow-secondary: 0 4px 14px rgba(139, 92, 246, 0.3);
+  --shadow-like: 0 4px 14px rgba(239, 68, 68, 0.3);
+  
+  /* 过渡动画 */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.2s ease;
+  --transition-slow: 0.3s ease;
+  --transition-bounce: 0.2s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 深色模式主题 */
+.theme-dark {
+  --community-primary: #60a5fa;
+  --community-secondary: #3b82f6;
+  --community-accent: #93c5fd;
+
+  --shadow-primary: 0 4px 14px rgba(96, 165, 250, 0.4);
+  --shadow-secondary: 0 4px 14px rgba(59, 130, 246, 0.4);
+  --shadow-like: 0 4px 14px rgba(239, 68, 68, 0.4);
+}
+
+/* 微信小程序深色模式 */
+.mp-theme-dark {
+  --community-primary: #60a5fa;
+  --community-secondary: #3b82f6;
+  --community-accent: #93c5fd;
+
+  --shadow-primary: 0 4px 14px rgba(96, 165, 250, 0.4);
+  --shadow-secondary: 0 4px 14px rgba(59, 130, 246, 0.4);
+  --shadow-like: 0 4px 14px rgba(239, 68, 68, 0.4);
+}
+
+/* 通用卡片样式类 */
+.community-card {
+  background: var(--bg-card);
+  border-radius: var(--radius-xl);
+  border: 1px solid var(--border-light);
+  box-shadow: var(--shadow-sm);
+  transition: all var(--transition-normal);
+  position: relative;
+  overflow: hidden;
+}
+
+.community-card:active {
+  transform: scale(0.98);
+  background: var(--bg-muted);
+  box-shadow: var(--shadow-xs);
+}
+
+/* 按钮样式类 */
+.community-btn-primary {
+  background: linear-gradient(135deg, #2563eb, #3b82f6);
+  color: #fff;
+  border: none;
+  border-radius: var(--radius-lg);
+  box-shadow: 0 6px 20px rgba(37, 99, 235, 0.35);
+  transition: all var(--transition-normal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 700;
+}
+
+.community-btn-primary:active {
+  transform: translateY(1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.community-btn-secondary {
+  background: var(--bg-muted);
+  color: var(--text-primary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  transition: all var(--transition-normal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 600;
+}
+
+.community-btn-secondary:active {
+  background: var(--bg-secondary);
+  transform: scale(0.98);
+}
+
+/* 图标按钮样式 */
+.community-icon-btn {
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all var(--transition-normal);
+}
+
+.community-icon-btn:active {
+  transform: scale(0.9);
+}
+
+/* 渐变图标背景 */
+.community-gradient-blue {
+  background: linear-gradient(135deg, #3b82f6, #60a5fa);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+}
+
+.community-gradient-pink {
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  box-shadow: 0 4px 14px rgba(37, 99, 235, 0.3);
+}
+
+/* 标签样式 */
+.community-tag {
+  padding: 5px 12px;
+  border-radius: var(--radius-full);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.community-tag-primary {
+  background: var(--primary-soft);
+  color: var(--primary-600);
+}
+
+.community-tag-success {
+  background: var(--success-soft);
+  color: var(--success-color);
+}
+
+.community-tag-warning {
+  background: var(--warning-soft);
+  color: var(--warning-color);
+}
+
+/* 头像样式 */
+.community-avatar {
+  border-radius: 50%;
+  background: linear-gradient(135deg, var(--primary-500), var(--primary-600));
+  border: none;
+  transition: all var(--transition-normal);
+}
+
+.community-avatar:active {
+  transform: scale(0.95);
+}
+
+/* 统计项样式 */
+.community-stat {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-xs);
+}
+
+.community-stat-text {
+  font-size: 14px;
+  color: var(--text-secondary);
+  font-weight: 500;
+}
+
+/* 动画类 */
+.community-fade-in-up {
+  animation: communityFadeInUp 0.3s ease-out;
+}
+
+.community-slide-in-right {
+  animation: communitySlideInRight 0.3s ease-out;
+}
+
+.community-pulse {
+  animation: communityPulse 2s infinite;
+}
+
+/* 动画定义 */
+@keyframes communityFadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes communitySlideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes communityPulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+/* 工具类 */
+.community-text-ellipsis {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-text-ellipsis-2 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+.community-text-ellipsis-3 {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  overflow: hidden;
+}

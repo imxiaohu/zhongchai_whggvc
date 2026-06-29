@@ -1,0 +1,72 @@
+version: 2
+updates:
+  # npm 依赖
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    commit-message:
+      prefix: "chore"
+      include: scope
+    labels:
+      - "dependencies"
+      - "npm"
+    open-pull-request-limit: 10
+    allow:
+      - dependency-name: "@tdesign/uniapp"
+      - dependency-name: "pinia"
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      production-dependencies:
+        dependency-type: production
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
+      dev-dependencies:
+        dependency-type: development
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
+
+  # Go 依赖
+  - package-ecosystem: gomod
+    directory: /go_backend
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    commit-message:
+      prefix: "chore"
+      include: scope
+    labels:
+      - "dependencies"
+      - "go"
+    open-pull-request-limit: 10
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      go-dependencies:
+        update-types: ["version-update:semver-minor", "version-update:semver-patch"]
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "09:00"
+      timezone: Asia/Shanghai
+    commit-message:
+      prefix: "ci"
+      include: scope
+    labels:
+      - "dependencies"
+      - "github-actions"
+    open-pull-request-limit: 5
+    groups:
+      actions:
+        patterns:
+          - "*"

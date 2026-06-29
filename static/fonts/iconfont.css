@@ -1,0 +1,23 @@
+/**
+ * @deprecated 此文件已废弃，图标已全部迁移到 TDesign t-icon 组件
+ * 保留此文件以防将来需要引用阿里巴巴 iconfont 图标
+ */
+@font-face {
+  font-family: "iconfont";
+  src: url('iconfont.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+}
+
+.iconfont {
+  font-family: "iconfont" !important;
+  font-size: 16px;
+  font-style: normal;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* 占位图标 - 如果需要添加更多图标，请在下方添加 */
+.icon-placeholder:before {
+  content: "\e600";
+} 

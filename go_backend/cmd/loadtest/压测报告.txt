@@ -1,0 +1,52 @@
+
+================================================================================
+                           压力测试报告
+================================================================================
+测试配置:
+  目标地址:             http://localhost:2333
+  最大并发数:           10000
+  预热时长:             2m0s
+  测试时长:             5m0s
+  请求间隔:             0s
+  超时时间:             30s
+  启用认证:             false
+
+测试结果:
+  总测试时长:           5m9.737323833s
+  总请求数:             239797
+  成功请求数:           147783
+  失败请求数:           92014
+  成功率:               61.63%
+  每秒请求数:           774.19
+
+响应时间统计:
+  平均响应时间:         12.366064813s
+  最小响应时间:         1.208µs
+  最大响应时间:         43.500009875s
+  50% 百分位:          7.484255667s
+  90% 百分位:          30.247039167s
+  95% 百分位:          31.060880917s
+  99% 百分位:          32.926568875s
+
+状态码分布:
+  200: 147783 (61.63%)
+  0: 92014 (38.37%)
+
+错误分布:
+  Get "http://localhost:2333/api/health/school-server": context canceled (Client.Timeout exceeded while awaiting headers): 450 (0.19%)
+  Get "http://localhost:2333/api/health/school-server": dial tcp [::1]:2333: connect: resource temporarily unavailable: 11900 (4.96%)
+  Get "http://localhost:2333/api/health/school-server": dial tcp [::1]:2333: connect: resource temporarily unavailable (Client.Timeout exceeded while awaiting headers): 198 (0.08%)
+  Get "http://localhost:2333/scloud/init": dial tcp [::1]:2333: connect: resource temporarily unavailable: 12371 (5.16%)
+  Get "http://localhost:2333/scloud/init": context deadline exceeded (Client.Timeout exceeded while awaiting headers): 25660 (10.70%)
+  Get "http://localhost:2333/api/health/school-server": context deadline exceeded (Client.Timeout exceeded while awaiting headers): 23756 (9.91%)
+  Get "http://localhost:2333/scloud/init": dial tcp [::1]:2333: connect: resource temporarily unavailable (Client.Timeout exceeded while awaiting headers): 209 (0.09%)
+  Get "http://localhost:2333/api/health/school-server": context canceled: 8460 (3.53%)
+  Get "http://localhost:2333/scloud/init": context canceled: 8576 (3.58%)
+  Get "http://localhost:2333/scloud/init": context canceled (Client.Timeout exceeded while awaiting headers): 434 (0.18%)
+
+性能建议:
+  ⚠️  成功率低于95%，建议减少负载或检查服务器容量。
+  ⚠️  平均响应时间较高，建议优化服务器性能。
+  ⚠️  95%百分位响应时间较高，部分请求存在明显延迟。
+
+================================================================================

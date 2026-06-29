@@ -1,0 +1,58 @@
+@font-face {
+	font-family: "cuIcon";
+	src: url('//at.alicdn.com/t/font_533566_yfq2d9wdij.eot?t=1545239985831');
+	/* IE9*/
+	src: url('//at.alicdn.com/t/font_533566_yfq2d9wdij.eot?t=1545239985831#iefix') format('embedded-opentype'),
+		/* IE6-IE8 */
+		url('//at.alicdn.com/t/font_533566_yfq2d9wdij.woff?t=1545239985831') format('woff'),
+		/* chrome, firefox */
+		url('//at.alicdn.com/t/font_533566_yfq2d9wdij.ttf?t=1545239985831') format('truetype'),
+		/* chrome, firefox, opera, Safari, Android, iOS 4.2+*/
+		url('//at.alicdn.com/t/font_533566_yfq2d9wdij.svg?t=1545239985831#cuIcon') format('svg');
+	/* iOS 4.1- */
+}
+
+.cuIcon {
+	font-family: "cuIcon";
+	font-size: inherit;
+	font-style: normal;
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+.cuIcon-right:before {
+	content: "\e6a3";
+}
+
+.cuIcon-back:before {
+	content: "\e679";
+}
+
+.cu-load {
+	display: block;
+	line-height: 3em;
+	text-align: center;
+}
+
+.cu-load::before {
+	font-family: "cuIcon";
+	display: inline-block;
+	margin-right: 6rpx;
+}
+
+.cu-load.loading::before {
+	content: "\e67a";
+	animation: cuIcon-spin 2s infinite linear;
+}
+
+@keyframes cuIcon-spin {
+	0% {
+		-webkit-transform: rotate(0);
+		transform: rotate(0);
+	}
+
+	100% {
+		-webkit-transform: rotate(359deg);
+		transform: rotate(359deg);
+	}
+} 

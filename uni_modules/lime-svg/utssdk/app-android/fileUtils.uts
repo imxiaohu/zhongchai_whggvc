@@ -1,0 +1,110 @@
+import File from 'java.io.File';
+import FileReader from 'java.io.FileReader';
+import BufferedReader from 'java.io.BufferedReader';
+import InputStreamReader from 'java.io.InputStreamReader';
+import FileInputStream from 'java.io.FileInputStream';
+export let svgDataURLPrefix = "data:image/svg+xml"
+
+
+function readFileAsDataUrl(br : BufferedReader) : string | null {
+	const content = readFileToRaw(br)
+	// let line : string | null = br.readLine();
+	// let lines : string[] = []
+	// while (line != null) {
+	// 	lines.push(line)
+	// 	line = br.readLine()
+	// }
+	// br.close();
+	// if (lines.length > 0) {
+	// 	const content = lines.join('')
+	// 	return 'data:image/svg+xml,' + encodeURIComponent(content)!.replace(/\+/g, '%20')
+	// }
+	if(content != null) {
+		return 'data:image/svg+xml,' + encodeURIComponent(content)!.replace(/\+/g, '%20')
+	}
+	return content
+}
+export function readFileToRaw(br : BufferedReader) : string | null {
+	let line : string | null = br.readLine();
+	let lines : string[] = []
+	while (line != null) {
+		lines.push(line)
+		line = br.readLine()
+	}
+	br.close();
+	if (lines.length > 0) {
+		return lines.join('')
+	}
+	return null
+}
+
+export function fileToRaw(file: string): string | null {
+	try {
+		const br = new BufferedReader(new InputStreamReader(new FileInputStream(file)))
+		return readFileToRaw(br)
+	} catch (e) {
+		return null
+	}
+}
+
+export function getResourcePath(path : string) : string | null {
+	let uri = path
+	if (uri.startsWith("http") || uri.startsWith("<svg") || uri.startsWith(svgDataURLPrefix) || uri.startsWith(`<?xml`)) {
+		return uri
+	}
+	if (uri.startsWith("file://")) {
+		uri = uri.substring("file://".length)
+	} else if (uri.startsWith("unifile://")) {
+		uri = uri.substring("unifile://".length)
+	} else {
+		uri = UTSAndroid.convert2AbsFullPath(uri)
+		if (uri.startsWith("/android_asset/")) {
+			uri = uri.replace("/android_asset/", "")
+			try {
+				// this.$el?.setSVG(SVG.getFromAsset(this.$androidContext!.assets, path.replace('/android_asset/','')))
+				const context = UTSAndroid.getUniActivity()!;
+				const inputStream = context.getResources()!.getAssets().open(uri);
+				const br = new BufferedReader(new InputStreamReader(inputStream))
+				// return readFileAsDataUrl(br)
+				return readFileToRaw(br)
+			} catch (e) {
+				return null
+			}
+		}
+	}
+	
+	if (new File(uri).exists()) {
+		return uri
+	} else {
+		return null
+	}
+}
+
+export function fileToDataUrl(path : string) : string | null {
+	try {
+		const file = new File(path)
+		if (file.exists()) {
+			const br = new BufferedReader(new FileReader(file))
+			return readFileAsDataUrl(br)
+			// let line : string | null = br.readLine();
+			// let lines : string[] = []
+			// while (line != null) {
+			// 	lines.push(line)
+			// 	line = br.readLine()
+			// }
+			// br.close();
+			// if(lines.length > 0) {
+			// 	const content = lines.join('')
+			// 	return 'data:image/svg+xml,' + encodeURIComponent(content)!.replace(/\+/g, '%20')
+			// }
+		} else {
+			const context = UTSAndroid.getUniActivity()!;
+			const inputStream = context.getResources()!.getAssets().open(path);
+			const br = new BufferedReader(new InputStreamReader(inputStream))
+			// return readFileAsDataUrl(br)
+			return readFileToRaw(br)
+		}
+	} catch (e) {
+		return null
+	}
+}

@@ -1,0 +1,302 @@
+/* 社区页面通用样式 */
+
+/* 毛玻璃卡片 - 兼容小程序 */
+@mixin glass-card {
+  background: rgba(255, 255, 255, 0.85);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-radius: var(--radius-xl);
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow:
+    0 4px 16px rgba(99, 102, 241, 0.08),
+    0 8px 32px rgba(0, 0, 0, 0.06),
+    inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  
+  /* 小程序不支持 backdrop-filter，使用纯色替代 */
+  .mp-weixin &,
+  .mp-alipay &,
+  .mp-baidu &,
+  .mp-toutiao &,
+  .mp-lark &,
+  .mp-qq &,
+  .mp-kuaishou & {
+    background: rgba(255, 255, 255, 0.95);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+}
+
+/* 卡片样式 - 使用更柔和的背景色 */
+@mixin card-base {
+  background: var(--bg-secondary);
+  border-radius: 20rpx;
+  border: 1px solid var(--border-primary);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  position: relative;
+  overflow: hidden;
+  
+  &::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.05), rgba(255, 255, 255, 0.02));
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  
+  &:active {
+    transform: scale(0.98) translateY(2rpx);
+    background: var(--bg-tertiary);
+    box-shadow: var(--shadow-md);
+
+    &::before {
+      opacity: 1;
+    }
+  }
+
+  &:hover {
+    transform: translateY(-2rpx);
+    box-shadow: var(--shadow-lg);
+  }
+}
+
+/* 按钮样式 */
+@mixin button-base {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 24rpx;
+  transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  border: 1px solid var(--border-primary);
+  
+  &:active {
+    transform: scale(0.95);
+  }
+}
+
+@mixin button-primary {
+  @include button-base;
+  background: var(--gradient-primary);
+  color: #fff;
+  border-color: var(--primary-color);
+  box-shadow: var(--shadow-primary);
+
+  &:active {
+    transform: scale(0.95) translateY(2rpx);
+    box-shadow: var(--shadow-sm);
+  }
+}
+
+@mixin button-secondary {
+  @include button-base;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  
+  &:active {
+    background: var(--bg-tertiary);
+  }
+}
+
+/* 图标按钮样式 */
+@mixin icon-button {
+  width: 60rpx;
+  height: 60rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.3s ease;
+  
+  &:active {
+    transform: scale(0.95);
+  }
+}
+
+/* 渐变图标背景 */
+@mixin gradient-icon($color1, $color2) {
+  background: linear-gradient(135deg, $color1, $color2);
+  box-shadow: 0 4rpx 16rpx rgba($color1, 0.3);
+}
+
+/* 标签样式 */
+@mixin tag-base {
+  padding: 6rpx 12rpx;
+  border-radius: 12rpx;
+  font-size: 20rpx;
+  font-weight: 500;
+}
+
+@mixin tag-primary {
+  @include tag-base;
+  background: rgba(99, 102, 241, 0.1);
+  color: var(--primary-color);
+  border: 1px solid rgba(99, 102, 241, 0.2);
+}
+
+@mixin tag-success {
+  @include tag-base;
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--success-color);
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+@mixin tag-warning {
+  @include tag-base;
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--warning-color);
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+/* 头像样式 */
+@mixin avatar($size: 64rpx) {
+  width: $size;
+  height: $size;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  border: 2rpx solid var(--border-primary);
+  transition: all 0.3s ease;
+  
+  &:hover {
+    border-color: var(--primary-color);
+    box-shadow: 0 4rpx 16rpx rgba(99, 102, 241, 0.2);
+  }
+}
+
+/* 统计项样式 */
+@mixin stat-item {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  
+  .stat-text {
+    font-size: 22rpx;
+    color: var(--text-secondary);
+  }
+}
+
+/* 分割线样式 */
+@mixin divider {
+  height: 1rpx;
+  background: var(--border-primary);
+  margin: 24rpx 0;
+}
+
+/* 空状态样式 */
+@mixin empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 80rpx 32rpx;
+  
+  .empty-image {
+    width: 240rpx;
+    height: 240rpx;
+    margin-bottom: 32rpx;
+    opacity: 0.6;
+  }
+  
+  .empty-text {
+    font-size: 28rpx;
+    color: var(--text-secondary);
+    margin-bottom: 48rpx;
+  }
+}
+
+/* 加载状态样式 */
+@mixin loading-state {
+  padding: 32rpx 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* 响应式间距 */
+@mixin responsive-padding {
+  padding: 32rpx;
+}
+
+/* 文本截断 */
+@mixin text-ellipsis($lines: 1) {
+  @if $lines == 1 {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  } @else {
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: $lines;
+    overflow: hidden;
+  }
+}
+
+/* 毛玻璃效果 */
+@mixin glass-effect {
+  backdrop-filter: blur(20px);
+  background: rgba(255, 255, 255, 0.8);
+  
+  .theme-dark & {
+    background: rgba(0, 0, 0, 0.8);
+  }
+}
+
+/* 动画效果 */
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes slideInRight {
+  from {
+    opacity: 0;
+    transform: translateX(20rpx);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@keyframes pulse {
+  0%, 100% {
+    transform: scale(1);
+  }
+  50% {
+    transform: scale(1.05);
+  }
+}
+
+/* 通用动画类 */
+.fade-in-up {
+  animation: fadeInUp 0.3s ease-out;
+}
+
+.slide-in-right {
+  animation: slideInRight 0.3s ease-out;
+}
+
+.pulse {
+  animation: pulse 2s infinite;
+}
+
+/* 深色模式适配 */
+.theme-dark {
+  .card-base::before {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+  }
+}
+
+.mp-theme-dark {
+  .card-base::before {
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.02), rgba(255, 255, 255, 0.01));
+  }
+}

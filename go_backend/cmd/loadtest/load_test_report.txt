@@ -1,0 +1,53 @@
+
+================================================================================
+                           LOAD TEST REPORT
+================================================================================
+Test Configuration:
+  Target URL:           https://go.server.zhongchai.imxiaohu.cn
+  Max Concurrency:      10000
+  Ramp-up Duration:     2m0s
+  Test Duration:        5m0s
+  Request Interval:     0s
+  Timeout:              30s
+  Authentication:       false
+
+Test Results:
+  Total Duration:       5m1.727340666s
+  Total Requests:       244014
+  Successful Requests:  14363
+  Failed Requests:      229651
+  Success Rate:         5.89%
+  Requests per Second:  808.72
+
+Response Time Statistics:
+  Average:              11.774280569s
+  Minimum:              1.542µs
+  Maximum:              1m6.162237833s
+  50th Percentile:      9.526306917s
+  90th Percentile:      30.131073959s
+  95th Percentile:      30.715033542s
+  99th Percentile:      32.340003334s
+
+Status Code Distribution:
+  200: 14363 (5.89%)
+  0: 215769 (88.42%)
+  401: 13882 (5.69%)
+
+Error Distribution:
+  Get "https://go.server.zhongchai.imxiaohu.cn/api/health/school-server": context canceled: 8892 (3.64%)
+  Get "https://go.server.zhongchai.imxiaohu.cn/scloud/init": context canceled: 8289 (3.40%)
+  Get "https://go.server.zhongchai.imxiaohu.cn/scloud/init": dial tcp YOUR_RABBITMQ_HOST_REMOVED:443: connect: can't assign requested address: 78410 (32.13%)
+  Get "https://go.server.zhongchai.imxiaohu.cn/scloud/init": context canceled (Client.Timeout exceeded while awaiting headers): 34 (0.01%)
+  Get "https://go.server.zhongchai.imxiaohu.cn/api/health/school-server": context canceled (Client.Timeout exceeded while awaiting headers): 26 (0.01%)
+  Get "https://go.server.zhongchai.imxiaohu.cn/api/health/school-server": dial tcp YOUR_RABBITMQ_HOST_REMOVED:443: connect: can't assign requested address: 81700 (33.48%)
+  Get "https://go.server.zhongchai.imxiaohu.cn/api/health/school-server": context deadline exceeded (Client.Timeout exceeded while awaiting headers): 22643 (9.28%)
+  Get "https://go.server.zhongchai.imxiaohu.cn/scloud/init": context deadline exceeded (Client.Timeout exceeded while awaiting headers): 15765 (6.46%)
+  Get "https://go.server.zhongchai.imxiaohu.cn/scloud/init": dial tcp YOUR_RABBITMQ_HOST_REMOVED:443: connect: can't assign requested address (Client.Timeout exceeded while awaiting headers): 5 (0.00%)
+  Get "https://go.server.zhongchai.imxiaohu.cn/api/health/school-server": dial tcp YOUR_RABBITMQ_HOST_REMOVED:443: connect: can't assign requested address (Client.Timeout exceeded while awaiting headers): 5 (0.00%)
+
+Recommendations:
+  ⚠️  Success rate is below 95%. Consider reducing load or checking server capacity.
+  ⚠️  Average response time is high. Consider optimizing server performance.
+  ⚠️  95th percentile response time is high. Some requests are experiencing significant delays.
+
+================================================================================

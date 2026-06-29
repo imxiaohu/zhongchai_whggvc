@@ -1,0 +1,35 @@
+ISC License
+
+Copyright (c) 2024-2026 imxiaohu
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR
+ANY SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN
+ACTION OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
+OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+
+---
+
+**附加条款 / Additional Terms**
+
+1. 本项目仅供学习交流使用，禁止用于任何商业或非法用途。
+   This project is for learning and communication purposes only.
+   Commercial use or any illegal activities are strictly prohibited.
+
+2. 所有接口均通过抓包方式获取，版权归学校教务系统及相关权利人所有。
+   All API interfaces were obtained through packet capture.
+   Copyright belongs to the school academic administration system and related rights holders.
+
+3. 使用本项目时，请遵守当地法律法规及学校教务系统的使用协议。
+   When using this project, please comply with local laws and regulations,
+   as well as the terms of use of the school academic administration system.
+
+4. 作者不对因使用本项目产生的任何直接或间接后果承担责任。
+   The author shall not be liable for any direct or indirect consequences
+   arising from the use of this project.

@@ -1,0 +1,536 @@
+{
+	"easycom": {
+		"autoscan": true,
+		"custom": {
+			"^t-(popup|loading)$": "@/uni_modules/tdesign-uniapp/components/$1/$1.vue",
+			"^t-(.*)": "@/uni_modules/tdesign-uniapp/components/$1/$1.vue"
+		}
+	},
+	"pages": [
+		{
+			"path": "pages/index/index",
+			"style": {
+				"navigationBarTitleText": "众柴智慧校园",
+				"enablePullDownRefresh": true,
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/login/login",
+			"style": {
+				"navigationBarTitleText": "登录",
+				"enablePullDownRefresh": false,
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom"
+
+			}
+		},
+		{
+			"path": "pages/user/bind",
+			"style": {
+				"navigationBarTitleText": "绑定学号",
+				"enablePullDownRefresh": false
+			}
+		},
+		{
+			"path": "pages/user/score",
+			"style": {
+				"navigationBarTitleText": "成绩查询",
+				"enablePullDownRefresh": false,
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/index",
+			"style": {
+				"navigationBarTitleText": "发现",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/discover/attendance",
+			"style": {
+				"navigationBarTitleText": "考勤记录",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/optional-course",
+			"style": {
+				"navigationBarTitleText": "选课记录",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/leave",
+			"style": {
+				"navigationBarTitleText": "我的请假",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/course-plan",
+			"style": {
+				"navigationBarTitleText": "课程计划",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/repair",
+			"style": {
+				"navigationBarTitleText": "报修管理",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/bank-card",
+			"style": {
+				"navigationBarTitleText": "我的银行卡",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/survey",
+			"style": {
+				"navigationBarTitleText": "调查问卷",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/survey-detail",
+			"style": {
+				"navigationBarTitleText": "问卷详情",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false
+			}
+		},
+		{
+			"path": "pages/discover/profile",
+			"style": {
+				"navigationBarTitleText": "个人信息",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/evaluation/list",
+			"style": {
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/schedule/index",
+			"style": {
+				"navigationBarTitleText": "课表",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/evaluation/swipe",
+			"style": {
+				"navigationBarTitleText": "评教",
+				"navigationBarBackgroundColor": "#007AFF",
+				"navigationBarTextStyle": "white",
+				"navigationStyle": "custom",
+				"app-plus": {
+					"titleNView": false
+				}
+			}
+		},
+		{
+			"path": "pages/user/index",
+			"style": {
+				"navigationBarTitleText": "我的",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/user/setting",
+			"style": {
+				"navigationBarTitleText": "设置",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/user/sync-settings",
+			"style": {
+				"navigationBarTitleText": "服务器同步设置",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/news/detail",
+			"style": {
+				"navigationBarTitleText": "通知详情",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/news/list",
+			"style": {
+				"navigationBarTitleText": "通知公告",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/error/server-down",
+			"style": {
+				"navigationBarTitleText": "服务器错误",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/user/notification-center",
+			"style": {
+				"navigationBarTitleText": "消息中心",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/user/notification-settings",
+			"style": {
+				"navigationBarTitleText": "通知设置",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false
+			}
+		},
+		{
+			"path": "pages/discover/score-notification",
+			"style": {
+				"navigationBarTitleText": "成绩通知",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false
+			}
+		},
+		{
+			"path": "pages/user/profile-edit",
+			"style": {
+				"navigationBarTitleText": "编辑个人信息",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false
+			}
+		},
+		{
+			"path": "pages/user/sms-recharge",
+			"style": {
+				"navigationBarTitleText": "短信套餐",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false
+			}
+		},
+		{
+			"path": "pages/user/server-status",
+			"style": {
+				"navigationBarTitleText": "服务器状态",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/community/index",
+			"style": {
+				"navigationBarTitleText": "知识库",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/community/club-list",
+			"style": {
+				"navigationBarTitleText": "公告列表",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/community/club-detail",
+			"style": {
+				"navigationBarTitleText": "公告详情",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/community/post-list",
+			"style": {
+				"navigationBarTitleText": "文章列表",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/community/post-detail",
+			"style": {
+				"navigationBarTitleText": "文章详情",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/community/create-club",
+			"style": {
+				"navigationBarTitleText": "发布公告",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/community/create-post",
+			"style": {
+				"navigationBarTitleText": "发布文章",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/community/club-management",
+			"style": {
+				"navigationBarTitleText": "内容管理",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/community/search",
+			"style": {
+				"navigationBarTitleText": "搜索",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/community/user-profile",
+			"style": {
+				"navigationBarTitleText": "个人主页",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/community/follow-list",
+			"style": {
+				"navigationBarTitleText": "粉丝/关注",
+				"navigationStyle": "custom"
+			}
+		},
+		{
+			"path": "pages/community/bookmark-list",
+			"style": {
+				"navigationBarTitleText": "我的收藏",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/my-teachers",
+			"style": {
+				"navigationBarTitleText": "我的老师",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/archive-edit",
+			"style": {
+				"navigationBarTitleText": "完善档案",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/miss-class",
+			"style": {
+				"navigationBarTitleText": "缺课统计",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/makeup-exam",
+			"style": {
+				"navigationBarTitleText": "补考查询",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/disciplinary",
+			"style": {
+				"navigationBarTitleText": "违纪查询",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/internship/index",
+			"style": {
+				"navigationBarTitleText": "实习管理",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": false,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/internship/score",
+			"style": {
+				"navigationBarTitleText": "实习成绩",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/internship/requirements",
+			"style": {
+				"navigationBarTitleText": "实习要求",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/internship/position",
+			"style": {
+				"navigationBarTitleText": "实习岗位",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/internship/application",
+			"style": {
+				"navigationBarTitleText": "我的申请",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/internship/signin",
+			"style": {
+				"navigationBarTitleText": "实习签到",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/internship/plan",
+			"style": {
+				"navigationBarTitleText": "我的实习计划",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/internship/summary",
+			"style": {
+				"navigationBarTitleText": "我的实习总结",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		},
+		{
+			"path": "pages/discover/internship/appraisal",
+			"style": {
+				"navigationBarTitleText": "实习鉴定表",
+				"navigationBarBackgroundColor": "#F8F8F8",
+				"navigationStyle": "custom",
+				"enablePullDownRefresh": true,
+				"backgroundTextStyle": "dark"
+			}
+		}
+	],
+	"globalStyle": {
+		"navigationBarTitleText": "众柴智慧校园"
+	
+	},
+	"tabBar": {
+		"color": "#94a3b8",
+		"selectedColor": "#6366f1",
+		"backgroundColor": "#ffffff",
+		"borderStyle": "white",
+		"list": [
+			{
+				"pagePath": "pages/index/index",
+				"text": "首页",
+				"iconPath": "static/icons/home.png",
+				"selectedIconPath": "static/icons/home_s.png"
+			},
+			{
+				"pagePath": "pages/schedule/index",
+				"text": "课表",
+				"iconPath": "static/icons/schedule.png",
+				"selectedIconPath": "static/icons/schedule_s.png"
+			},
+			{
+				"pagePath": "pages/community/index",
+				"text": "社区",
+				"iconPath": "static/icons/community.png",
+				"selectedIconPath": "static/icons/community_s.png"
+			},
+			{
+				"pagePath": "pages/discover/index",
+				"text": "发现",
+				"iconPath": "static/icons/discover.png",
+				"selectedIconPath": "static/icons/discover_s.png"
+			},
+			{
+				"pagePath": "pages/user/index",
+				"text": "我的",
+				"iconPath": "static/icons/me.png",
+				"selectedIconPath": "/static/icons/me_s.png"
+			}
+		]
+	},
+	"uniIdRouter": {}
+}

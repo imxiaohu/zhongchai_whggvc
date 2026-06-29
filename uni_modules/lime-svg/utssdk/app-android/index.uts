@@ -1,0 +1,84 @@
+import SVG from 'com.caverock.androidsvg.SVG';
+// import SVG from 'com.caverock.androidsvg';
+import ImageView from 'android.widget.ImageView';
+// import URL from 'java.net.URL';
+import PictureDrawable from 'android.graphics.drawable.PictureDrawable';
+import { getResourcePath, svgDataURLPrefix, fileToRaw } from './fileUtils';
+import { processSvgString, createColoredBitmap } from './utils'
+	
+export class NativeImage {
+	$element : UniNativeViewElement;
+	svg: SVG | null = null
+	imageView: ImageView | null = null
+	color: string | null = null
+	svgMap: Map<string, SVG> = new Map<string, SVG>()
+	constructor(element : UniNativeViewElement) {
+		// super(element.getAndroidActivity()!)
+		this.$element = element;
+		this.bindView();
+	}
+	bindView() {
+		//通过UniElement.getAndroidActivity()获取android平台activity 用于创建view的上下文
+		this.imageView = new ImageView(this.$element.getAndroidActivity()!, null);  //构建原生view
+	
+		this.$element.bindAndroidView(this.imageView!);
+	}
+	
+	
+	private emit(type : string, detail : UTSJSONObject) {
+		//构建自定义UniNativeViewEvent返回对象
+		const event = new UniNativeViewEvent(type, detail)
+		//响应分发原生Button的点击事件
+		this.$element.dispatchEvent(event)
+	}
+	private update() {
+		if(this.svg == null) return
+		const drawable = new PictureDrawable(this.svg!.renderToPicture())
+		if(this.color == null || this.color!.length == 0) {
+			this.imageView?.setImageDrawable(drawable)
+		} else {
+			const newBM = createColoredBitmap(drawable, this.color!)
+			if(newBM == null) return
+			this.imageView?.setImageBitmap(newBM)
+		}
+	}
+	updateSrc(src: string) {
+		const path = getResourcePath(src);
+		if(path == null) return
+		try {
+			if(this.svgMap.has(src)){
+				this.svg = this.svgMap.get(src)!
+			}
+			else if(path!.startsWith(`<?xml`) || path!.startsWith('<svg') || path!.startsWith(svgDataURLPrefix)) {
+				const svgStr = processSvgString(path)
+				this.svg = SVG.getFromString(svgStr)
+				this.svgMap.set(src, this.svg!)
+			} else {
+				const raw = fileToRaw(path)
+				if (raw == null) return
+				const svgStr = processSvgString(raw)
+				this.svg = SVG.getFromString(svgStr)
+				this.svgMap.set(src, this.svg!)
+				// let resourceUrl = new URL(path);
+				// this.svg = SVG.getFromInputStream(resourceUrl.openStream())
+				
+			}
+			// const detail = new ImageLoadEventDetail(this.svg!.getDocumentViewBox().width(), this.svg!.getDocumentViewBox().height())
+			// const loadEvent = new UniImageLoadEvent('load', detail)
+			this.emit('load', {
+				width: this.svg!.getDocumentViewBox().width(),
+				height: this.svg!.getDocumentViewBox().height()
+			})
+			this.update()
+		} catch(e) {
+			this.emit('error', {errMsg: e.message})
+		}
+	}
+	updateColor(color: string) {
+		this.color = color
+		this.update()
+	}
+	destroy() {
+		//数据回收
+	}
+}
