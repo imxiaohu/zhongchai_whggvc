@@ -24,10 +24,7 @@ func WechatLogin(c *gin.Context) {
 
 	// 解析请求数据
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "缺少参数code",
-		})
+		c.JSON(http.StatusBadRequest, utils.NewStandardErrorResponse("缺少参数code", 400))
 		return
 	}
 
@@ -36,10 +33,7 @@ func WechatLogin(c *gin.Context) {
 	appSecret := config.GetWechatAppSecret()
 
 	if appID == "" || appSecret == "" {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": "微信配置未设置",
-		})
+		c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("微信配置未设置", 500))
 		return
 	}
 
@@ -49,10 +43,7 @@ func WechatLogin(c *gin.Context) {
 
 	resp, err := http.Get(wxLoginURL)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": "微信登录失败",
-		})
+		c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("微信登录失败", 500))
 		return
 	}
 	//nolint:errcheck
@@ -60,28 +51,19 @@ func WechatLogin(c *gin.Context) {
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": "读取微信响应失败",
-		})
+		c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("读取微信响应失败", 500))
 		return
 	}
 
 	var wxResp WechatSessionResponse
 	if err := json.Unmarshal(body, &wxResp); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": "解析微信响应失败",
-		})
+		c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("解析微信响应失败", 500))
 		return
 	}
 
 	// 检查微信API错误
 	if wxResp.ErrCode != 0 {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": fmt.Sprintf("微信登录失败: %s", wxResp.ErrMsg),
-		})
+		c.JSON(http.StatusBadRequest, utils.NewStandardErrorResponse(fmt.Sprintf("微信登录失败: %s", wxResp.ErrMsg), 400))
 		return
 	}
 
@@ -109,10 +91,7 @@ func WechatLogin(c *gin.Context) {
 
 		// 保存用户
 		if err := models.CreateUser(user); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": "创建用户失败",
-			})
+			c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("创建用户失败", 500))
 			return
 		}
 	} else {
@@ -129,10 +108,7 @@ func WechatLogin(c *gin.Context) {
 	// 生成JWT令牌
 	token, err := utils.GenerateToken(fmt.Sprintf("%d", user.ID), user.WechatOpenID, "wechat")
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"success": false,
-			"message": "生成令牌失败",
-		})
+		c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("生成令牌失败", 500))
 		return
 	}
 
@@ -186,43 +162,32 @@ func SchoolBind(c *gin.Context) {
 
 	// 解析请求数据
 	if err := c.ShouldBindJSON(&req); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "学号、密码和验证码不能为空",
-		})
+		c.JSON(http.StatusBadRequest, utils.NewStandardErrorResponse("学号、密码和验证码不能为空", 400))
 		return
 	}
 
 	// 从JWT中获取用户ID
 	userIdInterface, exists := c.Get("userId")
 	if !exists {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"success": false,
-			"message": "未授权",
-		})
+		c.JSON(http.StatusUnauthorized, utils.NewStandardErrorResponse("未授权", 401))
 		return
 	}
 
 	userIdStr, ok := userIdInterface.(string)
 	if !ok {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "用户ID格式错误",
-		})
+		c.JSON(http.StatusBadRequest, utils.NewStandardErrorResponse("用户ID格式错误", 400))
 		return
 	}
 	userIdUint, err := strconv.ParseUint(userIdStr, 10, 64)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"success": false,
-			"message": "用户ID格式错误",
-		})
+		c.JSON(http.StatusBadRequest, utils.NewStandardErrorResponse("用户ID格式错误", 400))
 		return
 	}
 
 	// 查询用户信息
 	user, err := models.FindUserByID(uint(userIdUint))
 	if err != nil {
+		// 保留业务 code 字段以兼容前端 TOKEN_INVALID 判断
 		c.JSON(http.StatusUnauthorized, gin.H{
 			"success": false,
 			"message": "登录状态已失效，请重新登录",
@@ -237,10 +202,7 @@ func SchoolBind(c *gin.Context) {
 	// 尝试通过学校服务器验证登录
 	loginResp, err := proxyClient.ProxyLogin(req.StudentID, req.Password)
 	if err != nil || !loginResp.Success {
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"success": false,
-			"message": "学号或密码错误",
-		})
+		c.JSON(http.StatusUnauthorized, utils.NewStandardErrorResponse("学号或密码错误", 401))
 		return
 	}
 
@@ -253,10 +215,7 @@ func SchoolBind(c *gin.Context) {
 		log.Printf("[DEBUG-WECHAT-BIND] userID=%d existingUserID=%d username=%s - existing user, setting schoolPasswordEnc (len=%d)",
 			user.ID, existingUser.ID, req.StudentID, len(req.Password))
 		if err := existingUser.SetSchoolPassword(req.Password); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": "保存学校密码失败",
-			})
+			c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("保存学校密码失败", 500))
 			return
 		}
 		log.Printf("[DEBUG-WECHAT-BIND] userID=%d existingUserID=%d - schoolPasswordEnc set successfully (encLen=%d)",
@@ -279,15 +238,15 @@ func SchoolBind(c *gin.Context) {
 
 		// 更新现有用户
 		if err := models.UpdateUserFields(existingUser.ID, map[string]interface{}{
-			"realname":          loginResp.Result.UserInfo.Realname,
-			"avatar":            loginResp.Result.UserInfo.Avatar,
-			"birthday":          loginResp.Result.UserInfo.Birthday,
-			"sex":               loginResp.Result.UserInfo.Sex,
-			"email":             loginResp.Result.UserInfo.Email,
-			"phone":             loginResp.Result.UserInfo.Phone,
-			"identity_card":     loginResp.Result.UserInfo.IdentityCard,
+			"realname":         loginResp.Result.UserInfo.Realname,
+			"avatar":           loginResp.Result.UserInfo.Avatar,
+			"birthday":         loginResp.Result.UserInfo.Birthday,
+			"sex":              loginResp.Result.UserInfo.Sex,
+			"email":            loginResp.Result.UserInfo.Email,
+			"phone":            loginResp.Result.UserInfo.Phone,
+			"identity_card":    loginResp.Result.UserInfo.IdentityCard,
 			"class_name":       loginResp.Result.UserInfo.ClassName,
-			"profession_id":     loginResp.Result.UserInfo.ProfessionID,
+			"profession_id":    loginResp.Result.UserInfo.ProfessionID,
 			"faculty_id":       loginResp.Result.UserInfo.FacultyID,
 			"grade_id":         loginResp.Result.UserInfo.GradeID,
 			"current_semester": loginResp.Result.UserInfo.CurrentSemester,
@@ -295,10 +254,7 @@ func SchoolBind(c *gin.Context) {
 			"token_expire_at":  time.Now().Add(24 * time.Hour),
 			"last_login_at":    time.Now(),
 		}); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": "绑定失败",
-			})
+			c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("绑定失败", 500))
 			return
 		}
 
@@ -310,10 +266,7 @@ func SchoolBind(c *gin.Context) {
 		// 生成新的JWT token指向合并后的用户
 		newToken, err := utils.GenerateToken(fmt.Sprintf("%d", existingUser.ID), existingUser.Username, "wechat")
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": "生成令牌失败",
-			})
+			c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("生成令牌失败", 500))
 			return
 		}
 
@@ -348,10 +301,7 @@ func SchoolBind(c *gin.Context) {
 		log.Printf("[DEBUG-WECHAT-BIND] userID=%d username=%s - new user, setting schoolPasswordEnc (len=%d)",
 			user.ID, req.StudentID, len(req.Password))
 		if err := user.SetSchoolPassword(req.Password); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": "保存学校密码失败",
-			})
+			c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("保存学校密码失败", 500))
 			return
 		}
 		log.Printf("[DEBUG-WECHAT-BIND] userID=%d - schoolPasswordEnc set successfully (encLen=%d)",
@@ -373,27 +323,24 @@ func SchoolBind(c *gin.Context) {
 
 		// 保存更新的用户信息
 		if err := models.UpdateUserFields(user.ID, map[string]interface{}{
-			"username":          user.Username,
+			"username":            user.Username,
 			"school_password_enc": user.SchoolPasswordEnc,
-			"realname":          loginResp.Result.UserInfo.Realname,
-			"avatar":            loginResp.Result.UserInfo.Avatar,
-			"birthday":          loginResp.Result.UserInfo.Birthday,
-			"sex":               loginResp.Result.UserInfo.Sex,
-			"email":             loginResp.Result.UserInfo.Email,
-			"phone":             loginResp.Result.UserInfo.Phone,
-			"identity_card":     loginResp.Result.UserInfo.IdentityCard,
-			"class_name":       loginResp.Result.UserInfo.ClassName,
-			"profession_id":     loginResp.Result.UserInfo.ProfessionID,
-			"faculty_id":       loginResp.Result.UserInfo.FacultyID,
-			"grade_id":         loginResp.Result.UserInfo.GradeID,
-			"current_semester": loginResp.Result.UserInfo.CurrentSemester,
-			"school_token":     loginResp.Result.Token,
-			"token_expire_at":  time.Now().Add(24 * time.Hour),
+			"realname":            loginResp.Result.UserInfo.Realname,
+			"avatar":              loginResp.Result.UserInfo.Avatar,
+			"birthday":            loginResp.Result.UserInfo.Birthday,
+			"sex":                 loginResp.Result.UserInfo.Sex,
+			"email":               loginResp.Result.UserInfo.Email,
+			"phone":               loginResp.Result.UserInfo.Phone,
+			"identity_card":       loginResp.Result.UserInfo.IdentityCard,
+			"class_name":          loginResp.Result.UserInfo.ClassName,
+			"profession_id":       loginResp.Result.UserInfo.ProfessionID,
+			"faculty_id":          loginResp.Result.UserInfo.FacultyID,
+			"grade_id":            loginResp.Result.UserInfo.GradeID,
+			"current_semester":    loginResp.Result.UserInfo.CurrentSemester,
+			"school_token":        loginResp.Result.Token,
+			"token_expire_at":     time.Now().Add(24 * time.Hour),
 		}); err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": "绑定失败",
-			})
+			c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("绑定失败", 500))
 			return
 		}
 
@@ -402,10 +349,7 @@ func SchoolBind(c *gin.Context) {
 		// 生成新的JWT token
 		newToken, err := utils.GenerateToken(fmt.Sprintf("%d", user.ID), user.Username, "wechat")
 		if err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{
-				"success": false,
-				"message": "生成令牌失败",
-			})
+			c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("生成令牌失败", 500))
 			return
 		}
 

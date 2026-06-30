@@ -656,8 +656,89 @@ func (pc *ProxyController) GetSemesterScore(c *gin.Context) {
 }
 
 // GetCourseLessonTime 获取课表时间配置
+// 降级策略：缓存 → 学校服务器 → 本地默认（绝不 500）
 func (pc *ProxyController) GetCourseLessonTime(c *gin.Context) {
-	proxyRequest(pc, c, "GET", "/scloudoa/scs/course/tCourseTimetableDetail/getCourseLessonTime", nil)
+	const cacheKey = "global:course_lesson_time"
+	logf := func(format string, args ...interface{}) {
+		log.Printf("[GET-COURSE-LESSON-TIME] "+format, args...)
+	}
+
+	// 1. 缓存命中且未过期，直接返回
+	if cached, err := models.GetGlobalCache(cacheKey); err == nil && cached != nil {
+		var arr []gin.H
+		if json.Unmarshal([]byte(cached.CacheData), &arr) == nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success":        true,
+				"message":        "获取成功",
+				"code":           0,
+				"result":         arr,
+				"fromCache":      true,
+				"cacheUpdatedAt": cached.UpdatedAt.Format("2006-01-02 15:04:05"),
+			})
+			return
+		}
+	}
+
+	// 2. 尝试学校服务器
+	user, err := pc.requireUser(c)
+	if err != nil {
+		logf("no user in context, falling back to local default")
+		getCourseLessonTimeLocal(c)
+		return
+	}
+	body, proxyErr := pc.proxyClient.ProxyRequestWithAutoLogin(user, "GET", "/scloudoa/scs/course/tCourseTimetableDetail/getCourseLessonTime", nil)
+	if proxyErr == nil {
+		// 解析响应，尝试缓存 + 转发
+		var resp map[string]interface{}
+		if json.Unmarshal(body, &resp) == nil {
+			if result, ok := resp["result"]; ok {
+				if resultJSON, marshalErr := json.Marshal(result); marshalErr == nil {
+					_ = models.SetGlobalCache(cacheKey, string(resultJSON), 24*time.Hour)
+				}
+			}
+		}
+		c.Data(http.StatusOK, "application/json; charset=utf-8", body)
+		return
+	}
+
+	logf("school proxy failed: %v, falling back", proxyErr)
+
+	// 3. 学校服务器失败：回退陈旧缓存
+	if cached, err := models.GetGlobalCache(cacheKey); err == nil && cached != nil {
+		var arr []gin.H
+		if json.Unmarshal([]byte(cached.CacheData), &arr) == nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success":        true,
+				"message":        "学校服务器响应超时，已使用本地缓存数据",
+				"code":           0,
+				"result":         arr,
+				"fromCache":      true,
+				"stale":          true,
+				"cacheUpdatedAt": cached.UpdatedAt.Format("2006-01-02 15:04:05"),
+			})
+			return
+		}
+	}
+
+	// 4. 最后兜底：本地默认数据
+	getCourseLessonTimeLocal(c)
+}
+
+// requireUser 从 gin.Context 取登录用户，失败返回错误
+func (pc *ProxyController) requireUser(c *gin.Context) (*models.User, error) {
+	userIdInterface, exists := c.Get("userId")
+	if !exists {
+		return nil, fmt.Errorf("未授权")
+	}
+	userIdStr, ok := userIdInterface.(string)
+	if !ok {
+		return nil, fmt.Errorf("用户ID格式错误")
+	}
+	userIdUint, err := strconv.ParseUint(userIdStr, 10, 64)
+	if err != nil {
+		return nil, fmt.Errorf("用户ID格式错误")
+	}
+	return models.FindUserByID(uint(userIdUint))
 }
 
 // GetCourseSchoolTimetable 获取学校课表信息

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -17,10 +16,14 @@ import (
 )
 
 // LoginRequest 登录请求结构
+// Captcha/CaptchaToken 改为可选：
+//   - 都不传：跳过验证码校验（兼容旧前端）
+//   - 都传：通过内存 token 一次性校验（修复 Bug#2 CSRF + Bug#7 绕过）
 type LoginRequest struct {
-	Username string `json:"username" binding:"required"`
-	Password string `json:"password" binding:"required"`
-	Captcha  string `json:"captcha"`
+	Username     string `json:"username" binding:"required"`
+	Password     string `json:"password" binding:"required"`
+	Captcha      string `json:"captcha"`
+	CaptchaToken string `json:"captchaToken"`
 }
 
 // WechatLoginRequest 微信登录请求结构
@@ -47,6 +50,11 @@ type SchoolBindRequest struct {
 }
 
 // ScloudLogin 处理Web端登录请求
+// 流程（对应用户诉求"后端自动模拟真实请求"）：
+//  1. 优先用本地账号密码校验（已有缓存的用户直接登录）
+//  2. 都没有则调用学校 mLogin 接口，走 ProxyLogin 拿到 schoolToken
+//  3. 【关键】无论走哪条路径，都异步触发 tryPCAutoLogin 把 PC 端 JSESSIONID
+//     缓存到 user.pc_jsession_id 列，下次请求无需再次输入验证码
 func ScloudLogin(c *gin.Context) {
 	var req LoginRequest
 
@@ -62,10 +70,10 @@ func ScloudLogin(c *gin.Context) {
 		return
 	}
 
-	// 验证码验证（实际项目中应从Redis或其他存储中获取）
-	captchaCode, _ := c.Cookie("captcha_code")
-	if captchaCode != "" && req.Captcha != "" && !strings.EqualFold(captchaCode, req.Captcha) {
-		c.JSON(http.StatusBadRequest, utils.NewErrorResponse("验证码错误", 400))
+	// 验证码验证（仅在用户提供 token 时校验，缺失则视为"全自动登录"）
+	// 这样前端可以省略验证码输入，后端通过 OCR 自动完成 PC 端登录
+	if req.CaptchaToken != "" && !consumeCaptcha(req.CaptchaToken, req.Captcha) {
+		c.JSON(http.StatusBadRequest, utils.NewErrorResponse("验证码错误或已过期，请重新获取", 400))
 		return
 	}
 
@@ -88,6 +96,9 @@ func ScloudLogin(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, utils.NewErrorResponse("生成令牌失败", 500))
 			return
 		}
+		// 异步触发 PC 端自动登录（OCR 自动识别验证码）
+		// 即使失败也不影响主登录流程，下次请求会重试
+		go triggerPCAutoLoginAsync(user.ID)
 		c.JSON(http.StatusOK, utils.NewSuccessResponse(gin.H{
 			"token": token,
 			"userInfo": gin.H{
@@ -134,6 +145,9 @@ func ScloudLogin(c *gin.Context) {
 		return
 	}
 
+	// 异步触发 PC 端自动登录（OCR 自动识别验证码）
+	go triggerPCAutoLoginAsync(user.ID)
+
 	// 返回登录成功响应
 	c.JSON(http.StatusOK, utils.NewSuccessResponse(gin.H{
 		"token": token,
@@ -157,6 +171,38 @@ func ScloudLogin(c *gin.Context) {
 	}))
 }
 
+// triggerPCAutoLoginAsync 异步触发 PC 端自动登录（OCR 自动识别验证码）
+// 把 JSESSIONID 缓存到 user.pc_jsession_id 列，下次请求无需再次输入验证码
+// 即使失败也不影响主流程，下次请求时会自动重试
+func triggerPCAutoLoginAsync(userID uint) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Printf("[PC-AUTO-ASYNC] userID=%d panic: %v", userID, r)
+		}
+	}()
+	client := getPCClientForUser(userID)
+	user, err := models.FindUserByID(userID)
+	if err != nil {
+		log.Printf("[PC-AUTO-ASYNC] userID=%d FindUserByID failed: %v", userID, err)
+		return
+	}
+	if _, err := user.GetSchoolPassword(); err != nil {
+		// 用户没有 PC 密码（只通过微信登录），跳过
+		log.Printf("[PC-AUTO-ASYNC] userID=%d no PC password, skip", userID)
+		return
+	}
+	result := tryPCAutoLogin(client, user)
+	if result.NeedManual {
+		log.Printf("[PC-AUTO-ASYNC] userID=%d needs manual captcha, will retry later", userID)
+		return
+	}
+	if result.SessionID != "" {
+		log.Printf("[PC-AUTO-ASYNC] userID=%d PC session cached successfully", userID)
+		return
+	}
+	log.Printf("[PC-AUTO-ASYNC] userID=%d PC auto-login failed, will retry on next request", userID)
+}
+
 // ApiMSysMLogin 处理移动端登录请求
 func ApiMSysMLogin(c *gin.Context) {
 	var req LoginRequest
@@ -173,6 +219,13 @@ func ApiMSysMLogin(c *gin.Context) {
 		return
 	}
 
+	// 验证码校验（仅在用户提供 token 时校验，缺失则视为"全自动登录"）
+	// 这样前端可以省略验证码输入，后端通过 OCR 自动完成 PC 端登录
+	if req.CaptchaToken != "" && !consumeCaptcha(req.CaptchaToken, req.Captcha) {
+		c.JSON(http.StatusBadRequest, utils.NewStandardErrorResponse("验证码错误或已过期，请重新获取", 400))
+		return
+	}
+
 	user, err := models.FindUserByUsername(req.Username)
 	if err == nil && user.CheckPassword(req.Password) {
 		//nolint:errcheck
@@ -180,7 +233,7 @@ func ApiMSysMLogin(c *gin.Context) {
 		//nolint:errcheck
 		models.UpdateUserFields(user.ID, map[string]interface{}{
 			"school_password_enc": user.SchoolPasswordEnc,
-			"last_login_at":      time.Now(),
+			"last_login_at":       time.Now(),
 		})
 		services.CacheArchiveOnLogin(user.ID, user.Username, user.Password, user.SchoolToken)
 		token, err := utils.GenerateToken(fmt.Sprintf("%d", user.ID), user.Username, "mobile")
@@ -188,6 +241,8 @@ func ApiMSysMLogin(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("生成令牌失败", 500))
 			return
 		}
+		// 异步触发 PC 端自动登录（OCR 自动识别验证码）
+		go triggerPCAutoLoginAsync(user.ID)
 		c.JSON(http.StatusOK, utils.NewStandardSuccessResponse(gin.H{
 			"userInfo": gin.H{
 				"id":              fmt.Sprintf("%d", user.ID),
@@ -233,6 +288,9 @@ func ApiMSysMLogin(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("生成令牌失败", 500))
 		return
 	}
+
+	// 异步触发 PC 端自动登录（OCR 自动识别验证码）
+	go triggerPCAutoLoginAsync(user.ID)
 
 	// 返回登录成功响应，格式与学校服务器保持一致
 	c.JSON(http.StatusOK, utils.NewStandardSuccessResponse(gin.H{
@@ -350,23 +408,23 @@ func upsertUserFromSchoolLogin(username string, password string, loginResp *util
 	user.TokenExpireAt = now.Add(24 * time.Hour)
 	user.LastLoginAt = now
 	updates := map[string]interface{}{
-		"password":          user.Password,
+		"password":            user.Password,
 		"school_password_enc": user.SchoolPasswordEnc,
-		"nickname":          loginResp.Result.UserInfo.Realname,
-		"avatar":            loginResp.Result.UserInfo.Avatar,
-		"birthday":          loginResp.Result.UserInfo.Birthday,
-		"sex":               loginResp.Result.UserInfo.Sex,
-		"email":             loginResp.Result.UserInfo.Email,
-		"phone":             loginResp.Result.UserInfo.Phone,
-		"identity_card":     loginResp.Result.UserInfo.IdentityCard,
-		"class_name":        loginResp.Result.UserInfo.ClassName,
-		"profession_id":     loginResp.Result.UserInfo.ProfessionID,
-		"faculty_id":       loginResp.Result.UserInfo.FacultyID,
-		"grade_id":         loginResp.Result.UserInfo.GradeID,
-		"current_semester": loginResp.Result.UserInfo.CurrentSemester,
-		"school_token":     loginResp.Result.Token,
-		"token_expire_at":  now.Add(24 * time.Hour),
-		"last_login_at":    now,
+		"nickname":            loginResp.Result.UserInfo.Realname,
+		"avatar":              loginResp.Result.UserInfo.Avatar,
+		"birthday":            loginResp.Result.UserInfo.Birthday,
+		"sex":                 loginResp.Result.UserInfo.Sex,
+		"email":               loginResp.Result.UserInfo.Email,
+		"phone":               loginResp.Result.UserInfo.Phone,
+		"identity_card":       loginResp.Result.UserInfo.IdentityCard,
+		"class_name":          loginResp.Result.UserInfo.ClassName,
+		"profession_id":       loginResp.Result.UserInfo.ProfessionID,
+		"faculty_id":          loginResp.Result.UserInfo.FacultyID,
+		"grade_id":            loginResp.Result.UserInfo.GradeID,
+		"current_semester":    loginResp.Result.UserInfo.CurrentSemester,
+		"school_token":        loginResp.Result.Token,
+		"token_expire_at":     now.Add(24 * time.Hour),
+		"last_login_at":       now,
 	}
 	if err := models.UpdateUserFields(user.ID, updates); err != nil {
 		return nil, err

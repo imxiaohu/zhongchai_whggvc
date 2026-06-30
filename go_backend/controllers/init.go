@@ -7,17 +7,88 @@ import (
 	"image/color"
 	"image/png"
 	"math/big"
-	mathrand "math/rand"
+	mathrand "math/rand/v2"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
 	"github.com/xiaohu/pingjiao/utils"
 )
 
-// 创建一个本地随机数生成器
-var localRand = mathrand.New(mathrand.NewSource(time.Now().UnixNano()))
+// captchaStore 验证码内存存储：key=token, value=code；一次性使用，验证成功立即删除
+// 采用 token 而非 cookie 存储的原因：
+//  1. 避免 CSRF：cookie 会被浏览器自动携带，无法区分"用户主动提交"与"跨站请求"
+//  2. 避免多用户共享 cookie 互相覆盖
+//  3. 与 sessionId/JSESSIONID 解耦，移动端/H5/小程序均能可靠使用
+type captchaEntry struct {
+	code      string
+	createdAt time.Time
+}
+
+var (
+	captchaStoreMu sync.RWMutex
+	captchaStore   = make(map[string]captchaEntry)
+)
+
+const (
+	captchaTTL         = 5 * time.Minute
+	captchaStoreGCHook = 1 * time.Minute
+)
+
+// init 启动后台 goroutine 定期清理过期验证码
+func init() {
+	go func() {
+		ticker := time.NewTicker(captchaStoreGCHook)
+		defer ticker.Stop()
+		for range ticker.C {
+			now := time.Now()
+			captchaStoreMu.Lock()
+			for k, v := range captchaStore {
+				if now.Sub(v.createdAt) > captchaTTL {
+					delete(captchaStore, k)
+				}
+			}
+			captchaStoreMu.Unlock()
+		}
+	}()
+}
+
+// newCaptchaToken 生成不透明的随机 token
+func newCaptchaToken() (string, error) {
+	b := make([]byte, 24)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return base64.RawURLEncoding.EncodeToString(b), nil
+}
+
+// putCaptcha 写入验证码到内存
+func putCaptcha(token, code string) {
+	captchaStoreMu.Lock()
+	captchaStore[token] = captchaEntry{code: code, createdAt: time.Now()}
+	captchaStoreMu.Unlock()
+}
+
+// consumeCaptcha 校验并消费（一次性），校验成功立即删除
+func consumeCaptcha(token, code string) bool {
+	if token == "" || code == "" {
+		return false
+	}
+	captchaStoreMu.Lock()
+	defer captchaStoreMu.Unlock()
+	entry, ok := captchaStore[token]
+	if !ok {
+		return false
+	}
+	if time.Since(entry.createdAt) > captchaTTL {
+		delete(captchaStore, token)
+		return false
+	}
+	delete(captchaStore, token)
+	return strings.EqualFold(entry.code, code)
+}
 
 // ScloudInit 处理初始化请求
 func ScloudInit(c *gin.Context) {
@@ -37,6 +108,7 @@ func ScloudInit(c *gin.Context) {
 }
 
 // ScloudValidateCode 生成验证码图片
+// 响应中返回 captchaToken，前端必须在登录时一并提交（替代原 cookie 方案）
 func ScloudValidateCode(c *gin.Context) {
 	// 生成随机验证码
 	code, err := generateRandomCode(4)
@@ -45,21 +117,29 @@ func ScloudValidateCode(c *gin.Context) {
 		return
 	}
 
-	// 将验证码存储到会话中（实际项目中应使用Redis或其他方式存储）
-	// 这里简化处理，将验证码放入cookie
-	c.SetCookie("captcha_code", code, 300, "/", "", false, true)
+	// 生成 token 并存储验证码
+	token, err := newCaptchaToken()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, utils.NewErrorResponse("生成captcha token失败", 500))
+		return
+	}
+	putCaptcha(token, code)
 
-	// 生成验证码图片
-	img := generateCaptchaImage(code)
-
-	// 设置响应头
+	// 设置响应头（图片本身）
 	c.Header("Content-Type", "image/png")
 	c.Header("Cache-Control", "no-cache, no-store, must-revalidate")
 	c.Header("Pragma", "no-cache")
 	c.Header("Expires", "0")
+	// 通过响应头返回 token（非 Set-Cookie，CSRF 无法利用）
+	c.Header("X-Captcha-Token", token)
+
+	// 生成验证码图片
+	img := generateCaptchaImage(code)
 
 	// 输出图片
-	_ = png.Encode(c.Writer, img)
+	if err := png.Encode(c.Writer, img); err != nil {
+		return
+	}
 }
 
 // generateRandomString 生成指定长度的随机字符串
@@ -91,6 +171,7 @@ func generateRandomCode(length int) (string, error) {
 }
 
 // generateCaptchaImage 生成验证码图片
+// 内部使用 math/rand/v2（并发安全），不再使用共享锁保护的 math/rand
 func generateCaptchaImage(code string) *image.RGBA {
 	// 创建图片
 	width, height := 120, 40
@@ -105,24 +186,24 @@ func generateCaptchaImage(code string) *image.RGBA {
 
 	// 添加干扰线
 	for i := 0; i < 5; i++ {
-		x1 := localRand.Intn(width)
-		y1 := localRand.Intn(height)
-		x2 := localRand.Intn(width)
-		y2 := localRand.Intn(height)
-		addLine(img, x1, y1, x2, y2, color.RGBA{uint8(localRand.Intn(150)), uint8(localRand.Intn(150)), uint8(localRand.Intn(150)), 255})
+		x1 := mathrand.IntN(width)
+		y1 := mathrand.IntN(height)
+		x2 := mathrand.IntN(width)
+		y2 := mathrand.IntN(height)
+		addLine(img, x1, y1, x2, y2, color.RGBA{uint8(mathrand.IntN(150)), uint8(mathrand.IntN(150)), uint8(mathrand.IntN(150)), 255})
 	}
 
 	// 添加干扰点
 	for i := 0; i < 100; i++ {
-		x := localRand.Intn(width)
-		y := localRand.Intn(height)
-		img.Set(x, y, color.RGBA{uint8(localRand.Intn(255)), uint8(localRand.Intn(255)), uint8(localRand.Intn(255)), 255})
+		x := mathrand.IntN(width)
+		y := mathrand.IntN(height)
+		img.Set(x, y, color.RGBA{uint8(mathrand.IntN(255)), uint8(mathrand.IntN(255)), uint8(mathrand.IntN(255)), 255})
 	}
 
 	// 绘制验证码
 	for i, char := range code {
-		x := 20 + i*20 + localRand.Intn(5)
-		y := 20 + localRand.Intn(10)
+		x := 20 + i*20 + mathrand.IntN(5)
+		y := 20 + mathrand.IntN(10)
 		addChar(img, x, y, char, color.RGBA{0, 0, 200, 255})
 	}
 
@@ -230,7 +311,7 @@ func GenerateRandomAvatar() string {
 	img := image.NewRGBA(image.Rect(0, 0, width, height))
 
 	// 设置背景色
-	bgColor := color.RGBA{uint8(localRand.Intn(200)), uint8(localRand.Intn(200)), uint8(localRand.Intn(200)), 255}
+	bgColor := color.RGBA{uint8(mathrand.IntN(200)), uint8(mathrand.IntN(200)), uint8(mathrand.IntN(200)), 255}
 	for x := 0; x < width; x++ {
 		for y := 0; y < height; y++ {
 			img.Set(x, y, bgColor)
@@ -238,11 +319,11 @@ func GenerateRandomAvatar() string {
 	}
 
 	// 添加随机图案
-	patternColor := color.RGBA{uint8(localRand.Intn(100)), uint8(localRand.Intn(100)), uint8(localRand.Intn(100)), 255}
+	patternColor := color.RGBA{uint8(mathrand.IntN(100)), uint8(mathrand.IntN(100)), uint8(mathrand.IntN(100)), 255}
 	for i := 0; i < 5; i++ {
 		x := width / 2
 		y := height / 2
-		r := 10 + localRand.Intn(30)
+		r := 10 + mathrand.IntN(30)
 		addCircle(img, x, y, r, patternColor)
 	}
 

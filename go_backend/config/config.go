@@ -57,7 +57,17 @@ func GetEnvBoolFirst(keys []string, defaultValue bool) bool {
 // GetEnvSlice 获取切片类型的环境变量（逗号分隔）
 func GetEnvSlice(key string, defaultValue []string) []string {
 	if value := os.Getenv(key); value != "" {
-		return strings.Split(value, ",")
+		parts := strings.Split(value, ",")
+		// 过滤空字符串，避免 gin-contrib/cors 报 "bad origin" panic
+		filtered := parts[:0]
+		for _, p := range parts {
+			if p = strings.TrimSpace(p); p != "" {
+				filtered = append(filtered, p)
+			}
+		}
+		if len(filtered) > 0 {
+			return filtered
+		}
 	}
 	return defaultValue
 }
@@ -286,6 +296,14 @@ func GetRedisPoolSize() int {
 func GetRedisTimeout() int {
 	return GetEnvInt("REDIS_TIMEOUT", 5) // 默认5秒
 }
+
+// ===== 上游代理 HTTP 超时（秒）=====
+// 默认值与 .env.example 注释保持一致。生产事故复盘：30s 硬超时 + 跨省 ISP
+// 让连接池被 30s 单请求占满。改为分级超时，秒失败即可降级。
+func GetHTTPDialTimeoutSec() int         { return GetEnvInt("HTTP_DIAL_TIMEOUT_SEC", 3) }
+func GetHTTPTLSHandshakeTimeoutSec() int { return GetEnvInt("HTTP_TLS_TIMEOUT_SEC", 3) }
+func GetHTTPRespHeaderTimeoutSec() int   { return GetEnvInt("HTTP_RESP_HEADER_TIMEOUT_SEC", 5) }
+func GetHTTPTotalTimeoutSec() int        { return GetEnvInt("HTTP_TOTAL_TIMEOUT_SEC", 8) }
 
 func GetSMSEnabled() bool {
 	return GetEnvBoolFirst([]string{"ALIYUN_SMS_ENABLED", "SMS_ENABLED"}, false)

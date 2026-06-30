@@ -16,25 +16,25 @@ import (
 // StudentArchive 学生完整档案数据（来自银行卡接口 + JSON API 拼接）
 type StudentArchive struct {
 	// 基础资料
-	StudentNo        string `json:"studentNo"`
-	ExamNo           string `json:"examNo"`
-	Realname         string `json:"realname"`
-	NameUsedBefore   string `json:"nameUsedBefore"`
-	Sex              string `json:"sex"`
-	EntranceScore    string `json:"entranceScore"`
-	Birthday         string `json:"birthday"`
-	GraduateType     string `json:"graduateType"`
-	NativePlace      string `json:"nativePlace"`
-	GraduateSchool   string `json:"graduateSchool"`
-	IDCardNo         string `json:"idCardNo"`
-	GraduateForm     string `json:"graduateForm"`
-	IsMarried        string `json:"isMarried"`
-	SourceProvince   string `json:"sourceProvince"`
-	Nation           string `json:"nation"`
-	IsPoorArea       string `json:"isPoorArea"`
-	PoliticsStatus   string `json:"politicsStatus"`
-	HealthCondition  string `json:"healthCondition"`
-	Avatar           string `json:"avatar"`
+	StudentNo       string `json:"studentNo"`
+	ExamNo          string `json:"examNo"`
+	Realname        string `json:"realname"`
+	NameUsedBefore  string `json:"nameUsedBefore"`
+	Sex             string `json:"sex"`
+	EntranceScore   string `json:"entranceScore"`
+	Birthday        string `json:"birthday"`
+	GraduateType    string `json:"graduateType"`
+	NativePlace     string `json:"nativePlace"`
+	GraduateSchool  string `json:"graduateSchool"`
+	IDCardNo        string `json:"idCardNo"`
+	GraduateForm    string `json:"graduateForm"`
+	IsMarried       string `json:"isMarried"`
+	SourceProvince  string `json:"sourceProvince"`
+	Nation          string `json:"nation"`
+	IsPoorArea      string `json:"isPoorArea"`
+	PoliticsStatus  string `json:"politicsStatus"`
+	HealthCondition string `json:"healthCondition"`
+	Avatar          string `json:"avatar"`
 
 	// 学业信息
 	Campus           string `json:"campus"`
@@ -52,50 +52,50 @@ type StudentArchive struct {
 	EnrollmentType   string `json:"enrollmentType"`
 
 	// 联系方式
-	Phone            string `json:"phone"`
-	PersonalAddress  string `json:"personalAddress"`
-	Email            string `json:"email"`
-	QQ               string `json:"qq"`
+	Phone           string `json:"phone"`
+	PersonalAddress string `json:"personalAddress"`
+	Email           string `json:"email"`
+	QQ              string `json:"qq"`
 
 	// 银行卡信息
 	BankCardNumber   string `json:"bankCardNumber"`
-	BankName        string `json:"bankName"`
+	BankName         string `json:"bankName"`
 	BankProvinceCity string `json:"bankProvinceCity"`
-	BankSubBranch   string `json:"bankSubBranch"`
-	BankCardType    string `json:"bankCardType"`
-	CardHolder      string `json:"cardHolder"`
+	BankSubBranch    string `json:"bankSubBranch"`
+	BankCardType     string `json:"bankCardType"`
+	CardHolder       string `json:"cardHolder"`
 
 	// 家庭资料
-	FamilyAddress    string         `json:"familyAddress"`
-	FamilyPhone      string         `json:"familyPhone"`
-	FamilyPost       string         `json:"familyPost"`
-	FamilyMembers    []FamilyMember `json:"familyMembers"`
+	FamilyAddress string         `json:"familyAddress"`
+	FamilyPhone   string         `json:"familyPhone"`
+	FamilyPost    string         `json:"familyPost"`
+	FamilyMembers []FamilyMember `json:"familyMembers"`
 
 	// 学校经历
 	SchoolExperiences []SchoolExperience `json:"schoolExperiences"`
 
 	// 学业调整
-	AcademicChanges  []AcademicChange `json:"academicChanges"`
+	AcademicChanges []AcademicChange `json:"academicChanges"`
 }
 
 // StudentInfo 学校 JSON API /scloud/student/base/getStudentInfo 返回的数据
 type StudentInfo struct {
-	StudyForm        string `json:"studyForm"`
-	Memo             string `json:"memo"`
-	ClassName        string `json:"className"`
-	StudySystem      string `json:"studySystem"`
-	EnrollmentStatusID int  `json:"enrollmentStatusId"`
-	BranchCourts     string `json:"branchCourts"`
-	EnrollmentStatus string `json:"enrollmentStatus"`
-	ProfessionName   string `json:"professionName"`
-	ExpectedGradDate string `json:"expectedGraduateDate"`
-	Grade            string `json:"grade"`
-	Name             string `json:"name"`
-	ID               int    `json:"ID"`
-	AdminClass       string `json:"adminClass"`
-	FacultyStation   string `json:"facultyStation"`
-	StudyNumber      string `json:"studyNumber"`
-	EntranceDate     string `json:"entranceDate"`
+	StudyForm          string `json:"studyForm"`
+	Memo               string `json:"memo"`
+	ClassName          string `json:"className"`
+	StudySystem        string `json:"studySystem"`
+	EnrollmentStatusID int    `json:"enrollmentStatusId"`
+	BranchCourts       string `json:"branchCourts"`
+	EnrollmentStatus   string `json:"enrollmentStatus"`
+	ProfessionName     string `json:"professionName"`
+	ExpectedGradDate   string `json:"expectedGraduateDate"`
+	Grade              string `json:"grade"`
+	Name               string `json:"name"`
+	ID                 int    `json:"ID"`
+	AdminClass         string `json:"adminClass"`
+	FacultyStation     string `json:"facultyStation"`
+	StudyNumber        string `json:"studyNumber"`
+	EntranceDate       string `json:"entranceDate"`
 }
 
 type FamilyMember struct {
@@ -128,7 +128,7 @@ type AcademicChange struct {
 // ===== 内存缓存 =====
 
 type archiveCacheEntry struct {
-	archive *StudentArchive
+	archive  *StudentArchive
 	expireAt time.Time
 }
 
@@ -403,6 +403,12 @@ func FetchAndCacheArchive(user *models.User, clientID, overrideCookie string) (*
 func CacheArchiveOnLogin(userID uint, username, password, schoolToken string) {
 	go func() {
 		time.Sleep(2 * time.Second) // 延迟2秒，等登录完成
+
+		// 已有缓存就直接返回：避免登录后并发请求（包括 onShow 触发）重复拉取
+		if cached := getUserArchiveCache(userID); cached != nil {
+			log.Printf("[ARCHIVE-LOGIN] cache already warm, skip: userID=%d", userID)
+			return
+		}
 
 		user, err := models.FindUserByID(userID)
 		if err != nil {

@@ -117,7 +117,7 @@ func (s *OCRService) RecognizeFromBytes(imageData []byte) (string, error) {
 }
 
 // doRecognize 单次识别请求
-// ddddocr API: POST /ocr 接受 JSON {"image": "base64..."} 返回 {"result": "...", "processing_time": ...}
+// ddddocr API: POST /ocr/recognize/b64 接受 JSON {"image": "base64..."} 返回 {"result": "...", "processing_time": ...}
 func (s *OCRService) doRecognize(imageData []byte) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
@@ -130,7 +130,7 @@ func (s *OCRService) doRecognize(imageData []byte) (string, error) {
 		return "", fmt.Errorf("构建请求体失败: %w", err)
 	}
 
-	req, err := http.NewRequestWithContext(ctx, "POST", s.BaseURL+"/ocr", bytes.NewReader(jsonData))
+	req, err := http.NewRequestWithContext(ctx, "POST", s.BaseURL+"/ocr/recognize/b64", bytes.NewReader(jsonData))
 	if err != nil {
 		return "", fmt.Errorf("创建请求失败: %w", err)
 	}

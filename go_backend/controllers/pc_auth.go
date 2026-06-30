@@ -132,6 +132,10 @@ func PCLoginInit(c *gin.Context) {
 		return
 	}
 
+	// 同步注入 jar，避免后续 captcha/submit 用错 JSESSIONID
+	baseU, _ := url.Parse(client.BaseURL)
+	client.Jar.SetCookies(baseU, []*http.Cookie{{Name: "JSESSIONID", Value: jsessionID, Path: "/"}})
+
 	// 保存会话到缓存
 	setPCSession(userID, jsessionID)
 
@@ -172,6 +176,14 @@ func PCLoginSubmit(c *gin.Context) {
 	// 使用用户独立的PCClient
 	client := getPCClientForUser(userID)
 
+	// 获取 PC 登录密码（与移动端 mLogin 不同，PC 端 /login 走网页表单，
+	// 不依赖 captcha 走自动登录路径，仅在 needManual 时被前端调用）
+	pcPassword, err := user.GetSchoolPassword()
+	if err != nil || pcPassword == "" {
+		// 兼容历史账号没有 PC 密码的场景：仍退回"用学号"（与旧实现一致）
+		pcPassword = user.Username
+	}
+
 	// 获取已有JSESSIONID（优先从缓存，其次从数据库）
 	session := getPCSession(userID)
 	var jsessionID string
@@ -197,12 +209,15 @@ func PCLoginSubmit(c *gin.Context) {
 			c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("无法建立会话，请重试", 500))
 			return
 		}
+		// 同步写入 jar，避免后续请求拿到不同 JSESSIONID
+		u, _ := url.Parse(client.BaseURL)
+		client.Jar.SetCookies(u, []*http.Cookie{{Name: "JSESSIONID", Value: jsessionID, Path: "/"}})
 	}
 
-	// POST /scloud/login - 提交登录表单
+	// POST /scloud/login - 提交登录表单（手动降级路径，用户已输入 captcha）
 	formData := url.Values{}
 	formData.Set("username", user.Username)
-	formData.Set("password", user.Username) // PC登录密码与学号相同
+	formData.Set("password", pcPassword) // 使用保存的 PC 密码；缺省降级为学号
 	formData.Set("randomcode", req.Captcha)
 
 	loginReq, err := http.NewRequest("POST", client.BaseURL+"/login", strings.NewReader(formData.Encode()))
@@ -245,6 +260,7 @@ func PCLoginSubmit(c *gin.Context) {
 }
 
 // PCGetCaptchaImage 获取验证码图片（代理）
+// 修复：用户没有 PC 会话时，先自动 init 一份；不再允许"裸拿验证码"
 func PCGetCaptchaImage(c *gin.Context) {
 	userID, err := getUserIDFromContext(c)
 	if err != nil {
@@ -258,6 +274,24 @@ func PCGetCaptchaImage(c *gin.Context) {
 	var jsessionID string
 	if session != nil {
 		jsessionID = session.JSESSIONID
+	}
+	if jsessionID == "" {
+		// 没有会话：自动 init，避免前端拿到一个属于孤儿会话的验证码导致提交必失败
+		initReq, _ := http.NewRequest("GET", client.BaseURL+"/login", nil)
+		setPCRequestHeaders(initReq)
+		initResp, err := client.HTTPClient.Do(initReq)
+		if err != nil {
+			c.AbortWithStatus(http.StatusServiceUnavailable)
+			return
+		}
+		jsessionID = extractJSESSIONID(initResp.Cookies())
+		initResp.Body.Close()
+		if jsessionID != "" {
+			baseU, _ := url.Parse(client.BaseURL)
+			client.Jar.SetCookies(baseU, []*http.Cookie{{Name: "JSESSIONID", Value: jsessionID, Path: "/"}})
+			setPCSession(userID, jsessionID)
+			savePCSessionToDB(userID, jsessionID, "")
+		}
 	}
 
 	req, err := http.NewRequest("GET", client.BaseURL+"/validateCode", nil)
@@ -277,7 +311,11 @@ func PCGetCaptchaImage(c *gin.Context) {
 	}
 	defer resp.Body.Close()
 
+	// 透传响应头（过滤掉会污染客户端 jar 的 Set-Cookie，避免 jar 中混入不一致的会话）
 	for name, values := range resp.Header {
+		if strings.EqualFold(name, "Set-Cookie") {
+			continue
+		}
 		for _, value := range values {
 			c.Header(name, value)
 		}
@@ -870,7 +908,7 @@ func PCLogout(c *gin.Context) {
 	}))
 }
 
-// PCAutoLogin 全自动PC端登录（获取验证码→OCR识别→提交）
+// PCAutoLogin 全自动PC端登录（OCR 自动识别 + 重试，仅在所有重试都失败时降级手动）
 // 成功时返回凭证信息，前端需存储到 Storage
 func PCAutoLogin(c *gin.Context) {
 	userID, err := getUserIDFromContext(c)
@@ -886,123 +924,44 @@ func PCAutoLogin(c *gin.Context) {
 	}
 
 	// 获取 PC 密码
-	pcPassword, err := user.GetSchoolPassword()
-	if err != nil {
+	if _, err := user.GetSchoolPassword(); err != nil {
 		log.Printf("[PC-AUTO] userID=%d GetSchoolPassword failed: %v", userID, err)
 		c.JSON(http.StatusBadRequest, utils.NewStandardErrorResponse("PC登录密码未设置，请在设置中绑定学校账号密码", 400))
 		return
 	}
 
+	// 走统一的自动登录（包含 5 次 OCR 重试，仅在全部失败时降级手动）
 	client := getPCClientForUser(userID)
+	loginResult := tryPCAutoLogin(client, user)
 
-	// Step 1: GET /scloud/login 初始化会话
-	initReq, _ := http.NewRequest("GET", client.BaseURL+"/login", nil)
-	setPCRequestHeaders(initReq)
-	initResp, err := client.HTTPClient.Do(initReq)
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, utils.NewStandardErrorResponse("学校服务器连接失败，请稍后再试", 503))
-		return
-	}
-	jsessionID := extractJSESSIONID(initResp.Cookies())
-	initResp.Body.Close()
-	if jsessionID == "" {
-		c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("无法建立会话，请重试", 500))
-		return
-	}
-
-	// Step 2: 获取验证码图片
-	captchaReq, _ := http.NewRequest("GET", client.BaseURL+"/validateCode", nil)
-	setPCRequestHeaders(captchaReq)
-	captchaReq.Header.Set("Cookie", "JSESSIONID="+jsessionID)
-	captchaResp, err := client.HTTPClient.Do(captchaReq)
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, utils.NewStandardErrorResponse("获取验证码失败，请重试", 503))
-		return
-	}
-	captchaData, err := io.ReadAll(captchaResp.Body)
-	captchaResp.Body.Close()
-	if err != nil || len(captchaData) < 100 {
-		c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("验证码图片读取失败", 500))
-		return
-	}
-
-	// Step 3: OCR 识别
-	ocrResult, ocrErr := utils.GetOCRService().RecognizeFromBytes(captchaData)
-	if ocrErr != nil {
-		log.Printf("[PC-AUTO] userID=%d OCR failed: %v, falling back to manual", userID, ocrErr)
-		// OCR 失败时返回验证码图片 base64，让用户手动输入
+	if loginResult.NeedManual {
+		// OCR 重试全部失败（极少见）：降级让用户手动输入
+		// 保存 latest 会话
+		if loginResult.CaptchaSID != "" {
+			setPCSession(userID, loginResult.CaptchaSID)
+		}
 		c.JSON(http.StatusOK, utils.NewStandardSuccessResponse(gin.H{
 			"needManual": true,
-			"sessionId":  jsessionID,
-			"captcha":    "data:image/png;base64," + base64.StdEncoding.EncodeToString(captchaData),
-			"message":    "OCR识别失败，请手动输入验证码",
+			"sessionId":  loginResult.CaptchaSID,
+			"captcha":    "data:image/png;base64," + base64.StdEncoding.EncodeToString(loginResult.CaptchaData),
+			"message":    "自动识别多次失败，请在弹窗中输入验证码",
 		}))
 		return
 	}
 
-	// Step 4: POST 提交登录
-	formData := url.Values{}
-	formData.Set("username", user.Username)
-	formData.Set("password", pcPassword)
-	formData.Set("randomcode", ocrResult)
-
-	loginReq, _ := http.NewRequest("POST", client.BaseURL+"/login", strings.NewReader(formData.Encode()))
-	setPCLoginSubmitHeaders(loginReq, jsessionID)
-
-	loginResp, err := client.HTTPClient.Do(loginReq)
-	if err != nil {
-		c.JSON(http.StatusServiceUnavailable, utils.NewStandardErrorResponse("学校服务器连接失败", 503))
-		return
-	}
-	defer loginResp.Body.Close()
-
-	location := loginResp.Header.Get("Location")
-	if strings.Contains(location, "/index") {
-		newJsessionID := extractJSESSIONID(loginResp.Cookies())
-		if newJsessionID == "" {
-			newJsessionID = jsessionID
-		}
+	if loginResult.SessionID != "" {
 		expireTime := time.Now().Add(PCSessionTTL)
-		setPCSession(userID, newJsessionID)
-		savePCSessionToDB(userID, newJsessionID, loginReq.Header.Get("User-Agent"))
-
-		log.Printf("[PC-AUTO] userID=%d login success (OCR=%s), jsessionID=%s...", userID, ocrResult, newJsessionID[:8])
 		c.JSON(http.StatusOK, utils.NewStandardSuccessResponse(gin.H{
 			"success":    true,
 			"message":    "PC端登录成功（自动识别）",
-			"sessionId":  newJsessionID,
+			"sessionId":  loginResult.SessionID,
 			"expireTime": expireTime.Format("2006-01-02T15:04:05Z"),
-			"ocrResult":  ocrResult,
 			"ttlSeconds": int(PCSessionTTL.Seconds()),
 		}))
 		return
 	}
 
-	// OCR 识别错误，重试时带上图片让用户手动输入
-	clearPCSession(userID)
-	log.Printf("[PC-AUTO] userID=%d login failed (OCR=%s, password_len=%d), trying manual", userID, ocrResult, len(pcPassword))
-
-	// 重新获取一次会话
-	initReq2, _ := http.NewRequest("GET", client.BaseURL+"/login", nil)
-	setPCRequestHeaders(initReq2)
-	initResp2, _ := client.HTTPClient.Do(initReq2)
-	newSID := extractJSESSIONID(initResp2.Cookies())
-	initResp2.Body.Close()
-
-	captchaReq2, _ := http.NewRequest("GET", client.BaseURL+"/validateCode", nil)
-	setPCRequestHeaders(captchaReq2)
-	captchaReq2.Header.Set("Cookie", "JSESSIONID="+newSID)
-	captchaResp2, _ := client.HTTPClient.Do(captchaReq2)
-	captchaData2, _ := io.ReadAll(captchaResp2.Body)
-	captchaResp2.Body.Close()
-	setPCSession(userID, newSID)
-
-	c.JSON(http.StatusOK, utils.NewStandardSuccessResponse(gin.H{
-		"needManual": true,
-		"sessionId":  newSID,
-		"captcha":    "data:image/png;base64," + base64.StdEncoding.EncodeToString(captchaData2),
-		"message":    "验证码识别错误，请手动输入",
-	}))
+	c.JSON(http.StatusInternalServerError, utils.NewStandardErrorResponse("自动登录失败，请稍后重试", 500))
 }
 
 // PCGetSessionCredentials 获取会话凭证（供前端存储到 Storage）
@@ -1305,23 +1264,28 @@ func tryPCAutoLogin(client *PCClient, user *models.User) *PCLoginResult {
 		return result
 	}
 
-	// Step 1: GET /scloud/login 初始化会话
+	// Step 1: GET /scloud/login 初始化会话（不再提前 return：若服务器未下发 Set-Cookie，
+	// 下方 OCR 循环每次都会从 jar 兜底读 JSESSIONID，避免浪费 5 次 OCR 重试机会）
 	initReq, _ := http.NewRequest("GET", client.BaseURL+"/login", nil)
 	setPCRequestHeaders(initReq)
 	initResp, err := client.HTTPClient.Do(initReq)
 	if err != nil {
-		log.Printf("[PC-AUTO] userID=%d init request failed: %v", user.ID, err)
-		return result
-	}
-	jsessionID := extractJSESSIONID(initResp.Cookies())
-	log.Printf("[DEBUG-AUTO-LOGIN] userID=%d init: got JSESSIONID=%s resp.Cookies=%v", user.ID, jsessionID, initResp.Cookies())
-	initResp.Body.Close()
-	if jsessionID == "" {
-		log.Printf("[PC-AUTO] userID=%d no JSESSIONID from init", user.ID)
-		return result
+		log.Printf("[PC-AUTO] userID=%d init request failed: %v (will continue to OCR loop with jar fallback)", user.ID, err)
+	} else {
+		jsessionID := extractJSESSIONID(initResp.Cookies())
+		log.Printf("[DEBUG-AUTO-LOGIN] userID=%d init: got JSESSIONID=%s resp.Cookies=%v", user.ID, jsessionID, initResp.Cookies())
+		initResp.Body.Close()
+		if jsessionID == "" {
+			log.Printf("[PC-AUTO] userID=%d no JSESSIONID from init (OCR loop will use jar fallback)", user.ID)
+		}
 	}
 
-	maxRetries := 3
+	// 优先尝试 N 次全自动 OCR 登录：每次拉新验证码，重新 OCR 后提交。
+	// 失败原因分两类：
+	//   a) OCR 服务本身不可用 → 直接降级手动
+	//   b) OCR 识别出错的验证码 → 重试（最多 maxRetries 次）
+	maxRetries := 5
+	ocrService := utils.GetOCRService()
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		initReq, _ := http.NewRequest("GET", client.BaseURL+"/login", nil)
 		setPCRequestHeaders(initReq)
@@ -1361,10 +1325,11 @@ func tryPCAutoLogin(client *PCClient, user *models.User) *PCLoginResult {
 			continue
 		}
 
-		// OCR 识别（OCR 不可用时直接降级）
-		ocrResult, ocrErr := utils.GetOCRService().RecognizeFromBytes(captchaData)
+		// OCR 识别
+		ocrResult, ocrErr := ocrService.RecognizeFromBytes(captchaData)
 		if ocrErr != nil {
-			log.Printf("[PC-AUTO] userID=%d attempt %d: OCR failed: %v, falling back to manual", user.ID, attempt, ocrErr)
+			// OCR 服务自身不可用（如网络/配置问题）：立即降级手动
+			log.Printf("[PC-AUTO] userID=%d attempt %d: OCR service unavailable: %v, falling back to manual", user.ID, attempt, ocrErr)
 			result.NeedManual = true
 			result.CaptchaData = captchaData
 			result.CaptchaSID = curJsessionID
@@ -1402,31 +1367,50 @@ func tryPCAutoLogin(client *PCClient, user *models.User) *PCLoginResult {
 			return result
 		}
 
-		// 读取响应体查看错误信息
+		// OCR 识别错误或密码错误都会回到登录页 → 继续重试换新验证码
 		body, _ := io.ReadAll(io.LimitReader(loginResp.Body, 300))
-		log.Printf("[DEBUG-AUTO-LOGIN] userID=%d attempt %d: login failed body=%q", user.ID, attempt, body)
+		log.Printf("[DEBUG-AUTO-LOGIN] userID=%d attempt %d: login failed body=%q (will retry with new captcha)", user.ID, attempt, body)
 
 		if attempt < maxRetries {
-			time.Sleep(200 * time.Millisecond)
+			time.Sleep(300 * time.Millisecond)
 		}
 	}
 
-	// 所有自动尝试都失败，降级为手动验证
-	// 重新获取一次会话和验证码
+	// 所有自动尝试都失败（包括 OCR 一直识别错），降级为手动验证
+	// 重新获取一次会话和验证码给用户输入
 	initReq2, _ := http.NewRequest("GET", client.BaseURL+"/login", nil)
 	setPCRequestHeaders(initReq2)
 	initResp2, _ := client.HTTPClient.Do(initReq2)
 	newSID := extractJSESSIONID(initResp2.Cookies())
-	io.ReadAll(initResp2.Body)
-	initResp2.Body.Close()
+	if initResp2 != nil {
+		io.ReadAll(initResp2.Body)
+		initResp2.Body.Close()
+	}
+	// jar fallback：服务器若未下发 Set-Cookie（jar 中已存在的会话仍合法），用 jar 里的 JSESSIONID，
+	// 否则验证码请求会与表单提交用错会话，导致用户在弹窗里输入再多次也无效
+	if newSID == "" {
+		for _, c := range client.Jar.Cookies(reqURL(client.BaseURL)) {
+			if c.Name == "JSESSIONID" {
+				newSID = c.Value
+				break
+			}
+		}
+		if newSID != "" {
+			log.Printf("[PC-AUTO] userID=%d manual fallback: no Set-Cookie from init, using jar JSESSIONID", user.ID)
+		}
+	}
 
 	captchaReq2, _ := http.NewRequest("GET", client.BaseURL+"/validateCode", nil)
 	setPCRequestHeaders(captchaReq2)
-	captchaReq2.Header.Set("Cookie", "JSESSIONID="+newSID)
+	if newSID != "" {
+		captchaReq2.Header.Set("Cookie", "JSESSIONID="+newSID)
+	}
 	captchaResp2, _ := client.HTTPClient.Do(captchaReq2)
 	captchaData2, _ := io.ReadAll(captchaResp2.Body)
 	captchaResp2.Body.Close()
-	setPCSession(user.ID, newSID)
+	if newSID != "" {
+		setPCSession(user.ID, newSID)
+	}
 
 	log.Printf("[PC-AUTO] userID=%d all %d attempts failed, falling back to manual", user.ID, maxRetries)
 	result.NeedManual = true

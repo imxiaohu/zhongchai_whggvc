@@ -9,29 +9,29 @@ import (
 
 // User 用户模型
 type User struct {
-	ID              uint           `gorm:"primarykey" json:"id"`
-	CreatedAt       time.Time      `json:"createdAt"`
-	UpdatedAt       time.Time      `json:"updatedAt"`
-	DeletedAt       gorm.DeletedAt `gorm:"index" json:"deletedAt"`
-	Username        string         `gorm:"size:50;uniqueIndex" json:"username"` // 移除not null约束，允许微信用户暂时不设置用户名
-	Password        string         `gorm:"size:100" json:"-"`                   // 存储哈希后的密码
-	SchoolPasswordEnc string       `gorm:"size:512" json:"-"`
-	Realname        string         `gorm:"size:50" json:"realname"`
-	Nickname        string         `gorm:"size:50" json:"nickname"`
-	Avatar          string         `gorm:"size:255" json:"avatar"`
-	Email           string         `gorm:"size:100" json:"email"`
-	Phone           string         `gorm:"size:20" json:"phone"`
-	Birthday        string         `gorm:"size:20" json:"birthday"`
-	Sex             int            `gorm:"default:0" json:"sex"` // 0: 未知, 1: 男, 2: 女
-	IdentityCard    string         `gorm:"size:20" json:"identityCard"`
-	UserType        string         `gorm:"size:20;not null;default:'student'" json:"userType"` // student, teacher, admin
-	SchoolID        uint           `json:"schoolId"`
-	School          School         `gorm:"foreignKey:SchoolID" json:"school,omitempty"`
-	ClassName       string         `gorm:"size:50" json:"className"`
-	ProfessionID    uint           `json:"professionId"`
-	FacultyID       uint           `json:"facultyId"`
-	GradeID         uint           `json:"gradeId"`
-	CurrentSemester string         `gorm:"size:50" json:"currentSemester"`
+	ID                uint           `gorm:"primarykey" json:"id"`
+	CreatedAt         time.Time      `json:"createdAt"`
+	UpdatedAt         time.Time      `json:"updatedAt"`
+	DeletedAt         gorm.DeletedAt `gorm:"index" json:"deletedAt"`
+	Username          string         `gorm:"size:50;uniqueIndex" json:"username"` // 移除not null约束，允许微信用户暂时不设置用户名
+	Password          string         `gorm:"size:100" json:"-"`                   // 存储哈希后的密码
+	SchoolPasswordEnc string         `gorm:"size:512" json:"-"`
+	Realname          string         `gorm:"size:50" json:"realname"`
+	Nickname          string         `gorm:"size:50" json:"nickname"`
+	Avatar            string         `gorm:"size:255" json:"avatar"`
+	Email             string         `gorm:"size:100" json:"email"`
+	Phone             string         `gorm:"size:20" json:"phone"`
+	Birthday          string         `gorm:"size:20" json:"birthday"`
+	Sex               int            `gorm:"default:0" json:"sex"` // 0: 未知, 1: 男, 2: 女
+	IdentityCard      string         `gorm:"size:20" json:"identityCard"`
+	UserType          string         `gorm:"size:20;not null;default:'student'" json:"userType"` // student, teacher, admin
+	SchoolID          uint           `json:"schoolId"`
+	School            School         `gorm:"foreignKey:SchoolID" json:"school,omitempty"`
+	ClassName         string         `gorm:"size:50" json:"className"`
+	ProfessionID      uint           `json:"professionId"`
+	FacultyID         uint           `json:"facultyId"`
+	GradeID           uint           `json:"gradeId"`
+	CurrentSemester   string         `gorm:"size:50" json:"currentSemester"`
 
 	// 教务系统相关字段
 	SchoolToken   string    `gorm:"size:500" json:"-"` // 学校系统token
@@ -42,21 +42,22 @@ type User struct {
 	WechatUnionID string `gorm:"size:100" json:"wechatUnionId"`
 
 	// PC端会话凭证（与移动端Token独立）
-	PCJSESSIONID   string    `gorm:"size:256" json:"-"`
-	PCLoginTime    time.Time `json:"pcLoginTime"`
-	PCExpireTime   time.Time `json:"pcExpireTime"`
-	PCUserAgent    string    `gorm:"size:512" json:"-"`
+	// 显式声明 column，避免未来 NamingStrategy 改动后与 savePCSessionToDB 写入列名不一致
+	PCJSESSIONID string    `gorm:"size:256;column:pc_jsession_id" json:"-"`
+	PCLoginTime  time.Time `gorm:"column:pc_login_time" json:"pcLoginTime"`
+	PCExpireTime time.Time `gorm:"column:pc_expire_time" json:"pcExpireTime"`
+	PCUserAgent  string    `gorm:"size:512;column:pc_user_agent" json:"-"`
 
 	LastLoginAt time.Time `json:"lastLoginAt"`
 	// 活跃度追踪：用户最后活跃时间，用于个人基础信息缓存的暂停/恢复策略
-	LastActiveAt         time.Time `json:"lastActiveAt"`
+	LastActiveAt time.Time `json:"lastActiveAt"`
 	// 个人基础信息缓存状态（仅作便捷读取用，实际以 SyncSetting.PersonalInfoCacheStatus 为准）
 	PersonalInfoCacheActive bool `gorm:"-" json:"personalInfoCacheActive"`
-	Status      int       `gorm:"default:1" json:"status"` // 0: 禁用, 1: 正常
+	Status                  int  `gorm:"default:1" json:"status"` // 0: 禁用, 1: 正常
 
 	// 社区须知同意状态
-	CommunityTermsAgreed    bool      `gorm:"default:false" json:"communityTermsAgreed"`
-	CommunityTermsAgreedAt  time.Time `json:"communityTermsAgreedAt"`
+	CommunityTermsAgreed   bool      `gorm:"default:false" json:"communityTermsAgreed"`
+	CommunityTermsAgreedAt time.Time `json:"communityTermsAgreedAt"`
 }
 
 // SetPassword 设置并加密密码

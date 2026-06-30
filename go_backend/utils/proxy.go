@@ -7,27 +7,77 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
 	"net/url"
+	"os"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/xiaohu/pingjiao/config"
 	"github.com/xiaohu/pingjiao/models"
 )
 
+// 分级超时配置（按 "分接口分级" 策略）
+// 默认 TCP 3s / TLS 3s / 等响应头 5s / 总 8s。
+// 生产到学校服务器跨省跨 ISP 时，实测单次握手就可能挂 30s+，
+// 把各阶段压到秒级，让上游不通时也能秒失败、走缓存降级，避免连接池被占满。
+//
+// 注意：env 在第一次 NewProxyClient() 时才读取（懒初始化）。
+// main.go 用 godotenv.Load() 在 main() 里加载 .env，如果放在 init() 里
+// 读 env 会过早（godotenv.Load 还没执行），导致永远走默认值。
 var (
-	// 全局 HTTP Transport，支持连接池复用
-	globalHTTPTransport *http.Transport
+	globalHTTPTransport     *http.Transport
+	globalHTTPTransportOnce sync.Once
 )
 
-func init() {
-	globalHTTPTransport = &http.Transport{
-		MaxIdleConns:        100,
-		IdleConnTimeout:     90 * time.Second,
-		MaxIdleConnsPerHost: 20,
+func envInt(key string, def int) int {
+	if v := os.Getenv(key); v != "" {
+		if n, err := strconv.Atoi(v); err == nil && n > 0 {
+			return n
+		}
 	}
+	return def
+}
+
+// buildHTTPTransport 按当前进程 env 构造 HTTP Transport。
+func buildHTTPTransport() *http.Transport {
+	dialTimeout := envInt("HTTP_DIAL_TIMEOUT_SEC", 3)
+	tlsTimeout := envInt("HTTP_TLS_TIMEOUT_SEC", 3)
+	respHeaderTimeout := envInt("HTTP_RESP_HEADER_TIMEOUT_SEC", 5)
+	idleTimeout := envInt("HTTP_IDLE_TIMEOUT_SEC", 90)
+	maxIdle := envInt("HTTP_MAX_IDLE_CONNS", 100)
+	maxIdlePerHost := envInt("HTTP_MAX_IDLE_CONNS_PER_HOST", 20)
+
+	return &http.Transport{
+		MaxIdleConns:        maxIdle,
+		IdleConnTimeout:     time.Duration(idleTimeout) * time.Second,
+		MaxIdleConnsPerHost: maxIdlePerHost,
+		DialContext: (&net.Dialer{
+			Timeout:   time.Duration(dialTimeout) * time.Second,
+			KeepAlive: 30 * time.Second,
+		}).DialContext,
+		TLSHandshakeTimeout:   time.Duration(tlsTimeout) * time.Second,
+		ResponseHeaderTimeout: time.Duration(respHeaderTimeout) * time.Second,
+		ExpectContinueTimeout: 1 * time.Second,
+	}
+}
+
+// ensureHTTPTransport 懒初始化全局 Transport，进程内只构造一次。
+// 第一次调用发生在 NewProxyClient() 里——此时 main() 已执行 godotenv.Load，env 就绪。
+func ensureHTTPTransport() *http.Transport {
+	globalHTTPTransportOnce.Do(func() {
+		globalHTTPTransport = buildHTTPTransport()
+	})
+	return globalHTTPTransport
+}
+
+// ProxyTimeoutSeconds 返回当前 ProxyClient 的整体请求超时（秒）
+func ProxyTimeoutSeconds() int {
+	return envInt("HTTP_TOTAL_TIMEOUT_SEC", 8)
 }
 
 // ProxyClient 代理客户端
@@ -43,9 +93,9 @@ func NewProxyClient() *ProxyClient {
 		jar = nil
 	}
 	client := &http.Client{
-		Timeout:   30 * time.Second,
+		Timeout:   time.Duration(ProxyTimeoutSeconds()) * time.Second,
 		Jar:       jar,
-		Transport: globalHTTPTransport,
+		Transport: ensureHTTPTransport(),
 	}
 	return &ProxyClient{
 		BaseURL:    config.GetSchoolServerURL(),
@@ -283,26 +333,46 @@ func (p *ProxyClient) generateSign(timestamp string) string {
 	return strings.ToUpper(fmt.Sprintf("%x", hash))
 }
 
+// debugAutoLoginEnabled 控制 AutoLogin 是否打印诊断日志。
+// 生产默认 false：token 有效复用时的"成功"日志没价值，但日志量很大；
+// 排查问题时设环境变量 DEBUG_AUTO_LOGIN=true 打开。
+func debugAutoLoginEnabled() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("DEBUG_AUTO_LOGIN")))
+	return v == "1" || v == "true" || v == "yes" || v == "on"
+}
+
 // AutoLogin 自动登录并更新用户token。force=true 时跳过本地缓存检查，强制重新登录学校系统
 func (p *ProxyClient) AutoLogin(user *models.User, force bool) error {
 	encKey := config.GetSchoolPasswordEncKey()
+	debug := debugAutoLoginEnabled()
+
 	if force {
-		log.Printf("[DEBUG-AUTO-LOGIN] userID=%d force=true, skipping token check, will re-login school system", user.ID)
+		if debug {
+			log.Printf("[DEBUG-AUTO-LOGIN] userID=%d force=true, skipping token check, will re-login school system", user.ID)
+		}
 	} else {
 		tokenValid := time.Now().Before(user.TokenExpireAt) && user.SchoolToken != ""
-		log.Printf("[DEBUG-AUTO-LOGIN] userID=%d tokenValid=%v tokenExpireAt=%v schoolTokenLen=%d schoolPasswordEncLen=%d encKeyLen=%d username=%s userType=%s",
-			user.ID, tokenValid, user.TokenExpireAt.Format("2006-01-02T15:04:05Z07:00"), len(user.SchoolToken), len(user.SchoolPasswordEnc), len(encKey), user.Username, user.UserType)
 		if tokenValid {
+			// 复用成功路径：默认静默，需要诊断再开 DEBUG_AUTO_LOGIN
+			if debug {
+				log.Printf("[DEBUG-AUTO-LOGIN] userID=%d tokenValid=true tokenExpireAt=%v schoolTokenLen=%d schoolPasswordEncLen=%d encKeyLen=%d username=%s userType=%s",
+					user.ID, user.TokenExpireAt.Format("2006-01-02T15:04:05Z07:00"), len(user.SchoolToken), len(user.SchoolPasswordEnc), len(encKey), user.Username, user.UserType)
+			}
 			return nil
+		}
+		// token 即将过期/缺失，要走重新登录的路径——这里打一条 warning，保留可观测性
+		if debug {
+			log.Printf("[DEBUG-AUTO-LOGIN] userID=%d tokenValid=false tokenExpireAt=%v schoolTokenLen=%d (will re-login)",
+				user.ID, user.TokenExpireAt.Format("2006-01-02T15:04:05Z07:00"), len(user.SchoolToken))
 		}
 	}
 
 	// 检查学校密码是否已设置（用于自动登录）
 	if user.SchoolPasswordEnc == "" {
-		// #region debug log
-		log.Printf("[DEBUG-AUTO-LOGIN-FAIL] userID=%d username=%s userType=%s wechatOpenID=%s wechatUnionID=%s - no schoolPasswordEnc, cannot auto-login",
-			user.ID, user.Username, user.UserType, user.WechatOpenID, user.WechatUnionID)
-		// #endregion
+		if debugAutoLoginEnabled() {
+			log.Printf("[DEBUG-AUTO-LOGIN-FAIL] userID=%d username=%s userType=%s wechatOpenID=%s wechatUnionID=%s - no schoolPasswordEnc, cannot auto-login",
+				user.ID, user.Username, user.UserType, user.WechatOpenID, user.WechatUnionID)
+		}
 		return ErrSchoolPasswordNotSet
 	}
 
@@ -323,8 +393,10 @@ func (p *ProxyClient) AutoLogin(user *models.User, force bool) error {
 		}
 
 		loginResp, err := p.ProxyLogin(user.Username, password)
-		log.Printf("[DEBUG-AUTO-LOGIN] ProxyLogin result: success=%v message=%s tokenLen=%d",
-			loginResp.Success, loginResp.Message, len(loginResp.Result.Token))
+		if debugAutoLoginEnabled() {
+			log.Printf("[DEBUG-AUTO-LOGIN] ProxyLogin result: success=%v message=%s tokenLen=%d",
+				loginResp.Success, loginResp.Message, len(loginResp.Result.Token))
+		}
 		if err != nil {
 			if isSchoolUnreachableErr(err) {
 				recordSchoolUnreachable(user.ID)
@@ -363,9 +435,12 @@ func (p *ProxyClient) AutoLogin(user *models.User, force bool) error {
 
 // ProxyRequestWithAutoLogin 带自动登录的代理请求
 func (p *ProxyClient) ProxyRequestWithAutoLogin(user *models.User, method, path string, params url.Values) ([]byte, error) {
+	debug := debugAutoLoginEnabled()
 	// 确保用户已登录
 	if err := p.AutoLogin(user, false); err != nil {
-		log.Printf("[DEBUG-PROXY] userID=%d path=%s AutoLogin error: %v", user.ID, path, err)
+		if debug {
+			log.Printf("[DEBUG-PROXY] userID=%d path=%s AutoLogin error: %v", user.ID, path, err)
+		}
 		return nil, err
 	}
 
@@ -377,14 +452,20 @@ func (p *ProxyClient) ProxyRequestWithAutoLogin(user *models.User, method, path 
 
 	// 检查响应是否表示token过期
 	if p.isTokenExpired(body) {
-		log.Printf("[DEBUG-PROXY-RETRY] userID=%d path=%s - isTokenExpired=true, will force re-login school system", user.ID, path)
+		if debug {
+			log.Printf("[DEBUG-PROXY-RETRY] userID=%d path=%s - isTokenExpired=true, will force re-login school system", user.ID, path)
+		}
 		if err := p.AutoLogin(user, true); err != nil {
-			log.Printf("[DEBUG-PROXY-RETRY] userID=%d path=%s - AutoLogin(force) failed: %v", user.ID, path, err)
+			if debug {
+				log.Printf("[DEBUG-PROXY-RETRY] userID=%d path=%s - AutoLogin(force) failed: %v", user.ID, path, err)
+			}
 			return nil, err
 		}
 		// 重新发送请求
 		body, err = p.ProxyRequest(method, path, params, user.SchoolToken)
-		log.Printf("[DEBUG-PROXY-RETRY] userID=%d path=%s - retried with new token, err=%v", user.ID, path, err)
+		if debug {
+			log.Printf("[DEBUG-PROXY-RETRY] userID=%d path=%s - retried with new token, err=%v", user.ID, path, err)
+		}
 		return body, err
 	}
 
